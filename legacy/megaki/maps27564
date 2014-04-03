@@ -1,0 +1,92 @@
+00400000-00407000 r-xp 00000000 fe:00 1445059                            /home/geomaster/Projects/maskom/megaki/bin/megakitd
+00607000-00608000 rw-p 00007000 fe:00 1445059                            /home/geomaster/Projects/maskom/megaki/bin/megakitd
+00608000-00628000 rw-p 00000000 00:00 0 
+01886000-018ca000 rw-p 00000000 00:00 0                                  [heap]
+7fcc70138000-7fcc7ab3a000 rw-p 00000000 00:00 0 
+7fcc84000000-7fcc84021000 rw-p 00000000 00:00 0 
+7fcc84021000-7fcc88000000 ---p 00000000 00:00 0 
+7fcc88000000-7fcc88021000 rw-p 00000000 00:00 0 
+7fcc88021000-7fcc8c000000 ---p 00000000 00:00 0 
+7fcc8c000000-7fcc8c021000 rw-p 00000000 00:00 0 
+7fcc8c021000-7fcc90000000 ---p 00000000 00:00 0 
+7fcc90000000-7fcc90021000 rw-p 00000000 00:00 0 
+7fcc90021000-7fcc94000000 ---p 00000000 00:00 0 
+7fcc94000000-7fcc94021000 rw-p 00000000 00:00 0 
+7fcc94021000-7fcc98000000 ---p 00000000 00:00 0 
+7fcc98000000-7fcc98021000 rw-p 00000000 00:00 0 
+7fcc98021000-7fcc9c000000 ---p 00000000 00:00 0 
+7fcc9c000000-7fcc9c021000 rw-p 00000000 00:00 0 
+7fcc9c021000-7fcca0000000 ---p 00000000 00:00 0 
+7fcca0000000-7fcca0021000 rw-p 00000000 00:00 0 
+7fcca0021000-7fcca4000000 ---p 00000000 00:00 0 
+7fcca4000000-7fcca4021000 rw-p 00000000 00:00 0 
+7fcca4021000-7fcca8000000 ---p 00000000 00:00 0 
+7fcca8000000-7fcca8021000 rw-p 00000000 00:00 0 
+7fcca8021000-7fccac000000 ---p 00000000 00:00 0 
+7fccac000000-7fccac021000 rw-p 00000000 00:00 0 
+7fccac021000-7fccb0000000 ---p 00000000 00:00 0 
+7fccb0000000-7fccb0021000 rw-p 00000000 00:00 0 
+7fccb0021000-7fccb4000000 ---p 00000000 00:00 0 
+7fccb4000000-7fccb4021000 rw-p 00000000 00:00 0 
+7fccb4021000-7fccb8000000 ---p 00000000 00:00 0 
+7fccb8000000-7fccb8021000 rw-p 00000000 00:00 0 
+7fccb8021000-7fccbc000000 ---p 00000000 00:00 0 
+7fccbc000000-7fccbc021000 rw-p 00000000 00:00 0 
+7fccbc021000-7fccc0000000 ---p 00000000 00:00 0 
+7fccc1b7b000-7fccc1b7c000 ---p 00000000 00:00 0 
+7fccc1b7c000-7fccc237c000 rw-p 00000000 00:00 0 
+7fccc237c000-7fccc237d000 ---p 00000000 00:00 0 
+7fccc237d000-7fccc2b7d000 rw-p 00000000 00:00 0 
+7fccc2b7d000-7fccc2b7e000 ---p 00000000 00:00 0 
+7fccc2b7e000-7fccc337e000 rw-p 00000000 00:00 0 
+7fccc337e000-7fccc337f000 ---p 00000000 00:00 0 
+7fccc337f000-7fccc3b7f000 rw-p 00000000 00:00 0 
+7fccc938a000-7fccc939f000 r-xp 00000000 08:06 393221                     /lib/x86_64-linux-gnu/libgcc_s.so.1
+7fccc939f000-7fccc959f000 ---p 00015000 08:06 393221                     /lib/x86_64-linux-gnu/libgcc_s.so.1
+7fccc959f000-7fccc95a0000 rw-p 00015000 08:06 393221                     /lib/x86_64-linux-gnu/libgcc_s.so.1
+7fccc95a0000-7fccc95b5000 r-xp 00000000 08:06 393237                     /lib/x86_64-linux-gnu/libnsl-2.18.so
+7fccc95b5000-7fccc97b4000 ---p 00015000 08:06 393237                     /lib/x86_64-linux-gnu/libnsl-2.18.so
+7fccc97b4000-7fccc97b5000 r--p 00014000 08:06 393237                     /lib/x86_64-linux-gnu/libnsl-2.18.so
+7fccc97b5000-7fccc97b6000 rw-p 00015000 08:06 393237                     /lib/x86_64-linux-gnu/libnsl-2.18.so
+7fccc97b6000-7fccc97b8000 rw-p 00000000 00:00 0 
+7fccc97b8000-7fccc97bf000 r-xp 00000000 08:06 393247                     /lib/x86_64-linux-gnu/librt-2.18.so
+7fccc97bf000-7fccc99be000 ---p 00007000 08:06 393247                     /lib/x86_64-linux-gnu/librt-2.18.so
+7fccc99be000-7fccc99bf000 r--p 00006000 08:06 393247                     /lib/x86_64-linux-gnu/librt-2.18.so
+7fccc99bf000-7fccc99c0000 rw-p 00007000 08:06 393247                     /lib/x86_64-linux-gnu/librt-2.18.so
+7fccc99c0000-7fccc99c3000 r-xp 00000000 08:06 393234                     /lib/x86_64-linux-gnu/libdl-2.18.so
+7fccc99c3000-7fccc9bc2000 ---p 00003000 08:06 393234                     /lib/x86_64-linux-gnu/libdl-2.18.so
+7fccc9bc2000-7fccc9bc3000 r--p 00002000 08:06 393234                     /lib/x86_64-linux-gnu/libdl-2.18.so
+7fccc9bc3000-7fccc9bc4000 rw-p 00003000 08:06 393234                     /lib/x86_64-linux-gnu/libdl-2.18.so
+7fccc9bc4000-7fccc9d64000 r-xp 00000000 08:06 393229                     /lib/x86_64-linux-gnu/libc-2.18.so
+7fccc9d64000-7fccc9f63000 ---p 001a0000 08:06 393229                     /lib/x86_64-linux-gnu/libc-2.18.so
+7fccc9f63000-7fccc9f67000 r--p 0019f000 08:06 393229                     /lib/x86_64-linux-gnu/libc-2.18.so
+7fccc9f67000-7fccc9f69000 rw-p 001a3000 08:06 393229                     /lib/x86_64-linux-gnu/libc-2.18.so
+7fccc9f69000-7fccc9f6d000 rw-p 00000000 00:00 0 
+7fccc9f6d000-7fccc9f85000 r-xp 00000000 08:06 393223                     /lib/x86_64-linux-gnu/libpthread-2.18.so
+7fccc9f85000-7fccca184000 ---p 00018000 08:06 393223                     /lib/x86_64-linux-gnu/libpthread-2.18.so
+7fccca184000-7fccca185000 r--p 00017000 08:06 393223                     /lib/x86_64-linux-gnu/libpthread-2.18.so
+7fccca185000-7fccca186000 rw-p 00018000 08:06 393223                     /lib/x86_64-linux-gnu/libpthread-2.18.so
+7fccca186000-7fccca18a000 rw-p 00000000 00:00 0 
+7fccca18a000-7fccca1a9000 r-xp 00000000 08:06 553383                     /usr/local/lib/libuv.so.11.0.0
+7fccca1a9000-7fccca3a9000 ---p 0001f000 08:06 553383                     /usr/local/lib/libuv.so.11.0.0
+7fccca3a9000-7fccca3aa000 rw-p 0001f000 08:06 553383                     /usr/local/lib/libuv.so.11.0.0
+7fccca3aa000-7fccca3ab000 rw-p 00000000 00:00 0 
+7fccca3ab000-7fccca56f000 r-xp 00000000 08:06 526243                     /usr/lib/x86_64-linux-gnu/libcrypto.so.1.0.0
+7fccca56f000-7fccca76f000 ---p 001c4000 08:06 526243                     /usr/lib/x86_64-linux-gnu/libcrypto.so.1.0.0
+7fccca76f000-7fccca78a000 r--p 001c4000 08:06 526243                     /usr/lib/x86_64-linux-gnu/libcrypto.so.1.0.0
+7fccca78a000-7fccca799000 rw-p 001df000 08:06 526243                     /usr/lib/x86_64-linux-gnu/libcrypto.so.1.0.0
+7fccca799000-7fccca79d000 rw-p 00000000 00:00 0 
+7fccca79d000-7fccca7a9000 r-xp 00000000 08:06 553477                     /usr/local/dbgmem/lib/3.2.0-4-amd64/libdmemc.so
+7fccca7a9000-7fccca9a8000 ---p 0000c000 08:06 553477                     /usr/local/dbgmem/lib/3.2.0-4-amd64/libdmemc.so
+7fccca9a8000-7fccca9a9000 rw-p 0000b000 08:06 553477                     /usr/local/dbgmem/lib/3.2.0-4-amd64/libdmemc.so
+7fccca9a9000-7fccca9b2000 rw-p 00000000 00:00 0 
+7fccca9b2000-7fccca9d2000 r-xp 00000000 08:06 393225                     /lib/x86_64-linux-gnu/ld-2.18.so
+7fcccaa48000-7fcccaac2000 rw-p 00000000 00:00 0 
+7fcccabb4000-7fcccabba000 rw-p 00000000 00:00 0 
+7fcccabcf000-7fcccabd1000 rw-p 00000000 00:00 0 
+7fcccabd1000-7fcccabd2000 r--p 0001f000 08:06 393225                     /lib/x86_64-linux-gnu/ld-2.18.so
+7fcccabd2000-7fcccabd3000 rw-p 00020000 08:06 393225                     /lib/x86_64-linux-gnu/ld-2.18.so
+7fcccabd3000-7fcccabd4000 rw-p 00000000 00:00 0 
+7fff0fb5a000-7fff0fb7b000 rw-p 00000000 00:00 0                          [stack]
+7fff0fbff000-7fff0fc00000 r-xp 00000000 00:00 0                          [vdso]
+ffffffffff600000-ffffffffff601000 r-xp 00000000 00:00 0                  [vsyscall]

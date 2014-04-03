@@ -1,0 +1,59 @@
+MALLINFO START
+	non-mmaped space allocated from system: 2306048
+	number of free chunks: 228
+	number of fastbin blocks: 2825
+	number of mmapped regions: 0
+	space in mmapped regions: 0
+	maximum total allocated space: 0
+	space available in freed fastbin blocks: 139936
+	total allocated space: 37424
+	total free space: 2268624
+	top-most, releasable (via malloc_trim) space: 131744
+	DBGMEM arena size: 16
+MALLINFO EOF
+MEMALLOC: AREA_ALLOC
+Entry: 0x18a9c38 size: 288 generation: 0
+status OK
+	frame 0 : 0x7fccca9c2f22
+	frame 1 : 0x7fccca9c362e
+	frame 2 : 0x7fccc9f75bd7
+	frame 3 : 0x4053cd
+	frame 4 : 0x403a35
+	frame 5 : 0x404478
+	frame 6 : 0x7fccc9be5b45
+Entry: 0x18a9af8 size: 288 generation: 0
+status OK
+	frame 0 : 0x7fccca9c2f22
+	frame 1 : 0x7fccca9c362e
+	frame 2 : 0x7fccc9f75bd7
+	frame 3 : 0x4053cd
+	frame 4 : 0x403a35
+	frame 5 : 0x404478
+	frame 6 : 0x7fccc9be5b45
+Entry: 0x18a99b8 size: 288 generation: 0
+status OK
+	frame 0 : 0x7fccca9c2f22
+	frame 1 : 0x7fccca9c362e
+	frame 2 : 0x7fccc9f75bd7
+	frame 3 : 0x4053cd
+	frame 4 : 0x403a35
+	frame 5 : 0x404478
+	frame 6 : 0x7fccc9be5b45
+Entry: 0x18a9878 size: 288 generation: 0
+status OK
+	frame 0 : 0x7fccca9c2f22
+	frame 1 : 0x7fccca9c362e
+	frame 2 : 0x7fccc9f75bd7
+	frame 3 : 0x4053cd
+	frame 4 : 0x403a35
+	frame 5 : 0x404478
+	frame 6 : 0x7fccc9be5b45
+Entry: 0x18877b8 size: 1024 generation: 0
+status OK
+	frame 0 : 0x7fccc9c4590a
+	frame 1 : 0x7fccca4a6652
+	frame 2 : 0x7fccca4a7619
+	frame 3 : 0x404222
+	frame 4 : 0x7fccc9be5b45
+	frame 5 : 0x401fb9
+MEMALLOC: EOF

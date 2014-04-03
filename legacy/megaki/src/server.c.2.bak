@@ -1,0 +1,1190 @@
+#include "common.h"
+#include "tokenbank.h"
+#include "threadpool.h"
+#include "hexdump.h"
+#include "sslc.h"
+#include <openssl/rsa.h>
+#include <openssl/aes.h>
+#include <openssl/rand.h>
+#include <openssl/bn.h>
+#include <openssl/pem.h>
+#include <openssl/sha.h>
+#include <openssl/err.h>
+#include <assert.h>
+#include <signal.h>
+#include <string.h>
+#include <unistd.h>
+#include <pthread.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <uv.h>
+
+
+#define DOCUMENT_CONNECTIONS
+
+#define WATCHDOG_INTERVAL         1000
+#define LIBUV_BUFFER_BYTES        131072
+#define DELETION_QUEUE_LENGTH     1024
+#define MAGIC_BYTES               6
+#define RSA_LIMIT                 (MEGAKI_RSA_KEYSIZE / 8 - 42)
+#define SOCKET_BACKLOG            2048
+#define QUEUE_BACKLOG             8192
+#define CONFIG_MAXLINESIZE        16384
+#define MAX_THREADS               768
+#define MAX_ARG_LENGTH            16384
+
+#define TIMEOUT_INTERVAL          10000
+
+#define RECEIVE_TIMEOUT           30
+#define RECEIVE_FLAGS             (MSG_WAITALL)
+#define SEND_FLAGS                (0)
+#define SYN_LENGTH_NOHEAD         (MEGAKI_HASH_BYTES + 2 * MEGAKI_RSA_KEYSIZE / 8)
+#define SYNACK_LENGTH_NOHEAD      (MEGAKI_TOKEN_BYTES + MEGAKI_HASH_BYTES + \
+                                   MEGAKI_RSA_KEYSIZE * ((MEGAKI_TOKEN_BYTES + \
+                                   MEGAKI_AES_CBC_KEYSIZE / 8 + MEGAKI_RSA_KEYSIZE / 8 - 1) / (MEGAKI_RSA_KEYSIZE / 8)) / 8)
+#define SYN_LENGTH                (SYN_LENGTH_NOHEAD + MAGIC_BYTES)
+#define SYNACK_LENGTH             (SYNACK_LENGTH_NOHEAD + MAGIC_BYTES)
+#define ACK_LENGTH                (MAGIC_BYTES + MEGAKI_HASH_BYTES + MEGAKI_TOKEN_BYTES + MEGAKI_AES_BLOCK_BYTES + \
+                                   AES_ENCRYPTED_SIZE(MEGAKI_TOKEN_BYTES + MEGAKI_AES_CBC_KEYSIZE / 8))
+                                   
+#define MAX_TOKENS                100
+#define LINGER_SECONDS            10
+#define MAX_TOKEN_BUCKETS         (2*MAX_TOKENS)
+
+#define MAX_MESSAGE_LENGTH        1024
+#define DECRYPTION_BUF_LENGTH     512
+
+#define MAX_CONNECTIONS           
+int opt_daemonize;
+
+uv_loop_t* loop;
+uv_tcp_t servconn;
+
+int buf1_fail, buf2_fail;
+
+threadpool_t * pool;
+
+char* opt_port, *opt_addr, *opt_cert, *opt_cert_passphrase;
+int opt_threads, opt_queuelength;
+int last_elem;
+
+uv_timer_t watchdog_tmr;
+int global_killswitch;
+
+byte uvbuf[LIBUV_BUFFER_BYTES];
+
+RSA * server_private;
+/*
+typedef struct worker_info {
+  int socket;
+  struct sockaddr* claddr;
+  socklen_t claddr_size;
+} worker_info;
+
+worker_info *workers;
+*/
+
+struct timeval tv;  
+struct linger lin;
+
+typedef struct connection {
+  /*byte token[MEGAKI_TOKEN_BYTES];*/
+  tokentry* tokent;
+  RSA* client_public;
+  
+  AES_KEY symmetric_enc,
+          symmetric_dec;
+  byte    symmetric_raw[MEGAKI_AES_CBC_KEYSIZE / 8];
+  
+  uv_stream_t* stream;
+  enum state {
+    cs_wait_syn,
+    cs_recv_syn,
+    cs_wait_ack,
+    cs_recv_ack,
+    cs_msg_loop,
+    cs_error
+  } conn_state;
+# ifdef DOCUMENT_CONNECTIONS
+  char conn_id[7];
+# endif
+
+  uint8_t /*broken_pipe, */dead_stream, timed_out;
+  volatile uint8_t refcount;
+  pthread_mutex_t buffer_mutex, send_mutex, ref_mutex;
+  byte receive_buffer[MAX_MESSAGE_LENGTH],
+       send_buffer[MAX_MESSAGE_LENGTH];
+  uint32_t received_length, send_length;
+  uv_timer_t timeout_timer;
+  
+} connection;
+
+/*connection* deletion_queue[DELETION_QUEUE_LENGTH];
+int deletion_queue_elems;
+pthread_mutex_t deletion_queue_mutex = PTHREAD_MUTEX_INITIALIZER;
+*/
+
+void conngrab(connection* c)
+{
+  pthread_mutex_lock(&c->ref_mutex);
+  int c2 = ++c->refcount;
+  if (c2<=1)raise(SIGABRT);
+  #ifdef DOCUMENT_CONNECTIONS
+  fprintf(stderr, "[%s] grabbed, refcount is now %d\n", c->conn_id, c2);
+  #endif
+  pthread_mutex_unlock(&c->ref_mutex);
+  
+}
+
+
+void connrelease(connection* c)
+{
+  pthread_mutex_lock(&c->ref_mutex);
+  int c2 = --c->refcount;
+  #ifdef DOCUMENT_CONNECTIONS
+  fprintf(stderr, "[%s] released, refcount is now %d\n", c->conn_id, c2);
+  #endif
+  if (c->refcount <= 0) {
+    if (c->client_public)
+      RSA_free(c->client_public);
+    #ifdef DOCUMENT_CONNECTIONS
+    fprintf(stderr, "[%s] destroyed as refcount drops to 0\n", c->conn_id);
+    #endif
+    free(c);
+    
+  } else pthread_mutex_unlock(&c->ref_mutex);
+}
+
+
+void freearg(void* x)
+{
+  free(x);
+}
+
+void on_release_async(uv_async_t* handle, int status)
+{
+  connrelease((connection*)handle->data);
+  uv_close(handle, freearg);
+}
+
+void release_async(connection *c)
+{
+  /*uv_async_t* async = (uv_async_t*)malloc(sizeof(uv_async_t));*/
+  uv_timer_t *tmr = (uv_timer_t*)malloc(sizeof(uv_timer_t));
+  /*async->data = c;*/
+  tmr->data = c;
+  /*if (uv_async_init(loop, async, on_release_async) != -1) {*/
+  if (uv_timer_init(loop, tmr) != -1) {
+    /*if (uv_async_send(async) == -1) {*/
+    if (uv_timer_start(tmr, on_release_async, 0, 0) == -1) {
+      #ifdef DOCUMENT_CONNECTIONS
+      fprintf(stderr, "[%s] UNEXPECTED: could not dispatch async to release, memory leaks inbound\n", c->conn_id);
+      #endif
+      free(tmr);
+    }
+  } else {
+    #ifdef DOCUMENT_CONNECTIONS
+    fprintf(stderr, "[%s] UNEXPECTED: could not init async to release, memory leaks inbound\n", c->conn_id);
+    #endif
+    free(tmr);
+  }
+}
+
+
+void timer_kill(uv_timer_t* t)
+{
+  connrelease(t->data);
+}
+
+void close_cb(uv_handle_t* h)
+{
+  ((connection*)h->data)->dead_stream = 1;
+  uv_timer_t * t = &((connection*)h->data)->timeout_timer;
+  uv_timer_stop(t);
+  conngrab((connection*)h->data);
+  uv_close(t, timer_kill);
+  connrelease((connection*)h->data);
+  /*release_async((connection*)h->data);*/
+  free(h);
+}
+
+void timeout_cb(uv_timer_t* t)
+{
+  connection* c = (connection*)t->data;
+  c->timed_out = 1;
+  #ifdef DOCUMENT_CONNECTIONS
+  if (!c->dead_stream)
+    fprintf(stderr, "[%s] timed out, closing\n", c->conn_id);
+  #endif
+  if (c->dead_stream)
+    close_cb(c->stream);
+  else uv_close(c->stream, close_cb);
+  /*release_async(c);*/
+}
+
+void on_close_async(uv_handle_t* t)
+{
+  if (((connection*)t->data)->dead_stream)
+    close_cb(((connection*)t->data)->stream);
+  else uv_close(((connection*)t->data)->stream, close_cb);
+  fprintf(stderr,"thishappensonce\n");
+  uv_close(t, freearg);
+  connrelease((connection*)t->data);
+}
+
+void refresh_timeout(connection* c)
+{
+  conngrab(c);
+  uv_timer_stop(&c->timeout_timer);
+  uv_timer_start(&c->timeout_timer, timeout_cb, TIMEOUT_INTERVAL, 0);
+  release_async(c);
+}
+
+void on_refresh_timeout_async(uv_async_t* h, int st)
+{
+  connection* c = (connection*) h->data;
+  refresh_timeout(c);
+  /*release_async(c);*/
+  uv_close(h, freearg);
+}
+
+void refresh_timeout_async(connection* c)
+{
+  /*conngrab(c);*/
+  uv_async_t* async = (uv_async_t*)malloc(sizeof(uv_async_t));
+  async->data = c;
+  if (uv_async_init(loop, async, on_refresh_timeout_async) != -1) {
+    if (uv_async_send(async) == -1) {
+      #ifdef DOCUMENT_CONNECTIONS
+      fprintf(stderr, "[%s] could not dispatch async to refresh timeout\n", c->conn_id);
+      #endif
+      /*release_async(c);*/
+      free(async);
+    }
+  } else {
+    //release_async(c);
+    free(async);
+  }  
+}
+
+//////////////////////////
+
+void stop_timeout(connection* c)
+{
+  conngrab(c);
+  uv_timer_stop(&c->timeout_timer);
+  release_async(c);
+}
+
+void on_stop_timeout_async(uv_async_t* h, int st)
+{
+  connection* c = (connection*) h->data;
+  stop_timeout(c);
+  /*release_async(c);*/
+  uv_close(h, freearg);
+}
+
+void stop_timeout_async(connection* c)
+{
+  /*conngrab(c);*/
+  uv_async_t* async = (uv_async_t*)malloc(sizeof(uv_async_t));
+  async->data = c;
+  if (uv_async_init(loop, async, on_stop_timeout_async) != -1) {
+    if (uv_async_send(async) == -1) {
+      #ifdef DOCUMENT_CONNECTIONS
+      fprintf(stderr, "[%s] could not dispatch async to stop timeout\n", c->conn_id);
+      #endif
+      /*release_async(c);*/
+      free(async);
+    }
+  } else {
+    //release_async(c);
+    free(async);
+  }  
+}
+
+////////////////////////////////////
+
+void restart_timeout(connection* c)
+{
+  conngrab(c);
+  uv_timer_start(&c->timeout_timer, timeout_cb, TIMEOUT_INTERVAL, 0);
+  release_async(c);
+}
+
+void on_restart_timeout_async(uv_async_t* h, int st)
+{
+  connection* c = (connection*) h->data;
+  restart_timeout(c);
+  /*release_async(c);*/
+  uv_close(h, freearg);
+}
+
+void restart_timeout_async(connection* c)
+{
+  /*conngrab(c);*/
+  uv_async_t* async = (uv_async_t*)malloc(sizeof(uv_async_t));
+  async->data = c;
+  if (uv_async_init(loop, async, on_restart_timeout_async) != -1) {
+    if (uv_async_send(async) == -1) {
+      #ifdef DOCUMENT_CONNECTIONS
+      fprintf(stderr, "[%s] could not dispatch async to restart timeout\n", c->conn_id);
+      #endif
+      /*release_async(c);*/
+      free(async);
+    }
+  } else {
+    //release_async(c);
+    free(async);
+  }  
+}
+
+void close_async(connection* c)
+{
+  conngrab(c);
+  uv_async_t* async = (uv_async_t*)malloc(sizeof(uv_async_t));
+  async->data = c;
+  if (!c->dead_stream && uv_async_init(loop, async, on_close_async) != -1) {
+    if (uv_async_send(async) == -1) {
+      #ifdef DOCUMENT_CONNECTIONS
+      fprintf(stderr, "[%s] could not dispatch async to close\n", c->conn_id);
+      #endif
+      connrelease(c);
+      free(async);
+    }
+  } else {
+    #ifdef DOCUMENT_CONNECTIONS
+    fprintf(stderr, "[%s] stream is dead or async_init fail\n", c->conn_id);
+    #endif
+    
+    connrelease(c);
+    free(async);
+  }
+}
+/*
+void on_shutdown(uv_shutdown_t *sht, int status)
+{
+  /*fprintf(stderr, "shutdown\n ");*//*
+  
+  ((connection*)sht->data)->dead_stream = 1;
+  if (status != -1) {
+    uv_close((uv_handle_t*)sht->handle, on_close_async);
+  } else {
+    free(sht->data);
+  }
+  free(sht);
+}
+*/
+void quit_connection(connection* c, int ret)
+{
+  /*pthread_mutex_lock(&c->ref_mutex);
+  
+  uv_shutdown_t *sht = malloc(sizeof(uv_shutdown_t));
+  sht->data = c;
+  if (c->dead_stream || c->broken_pipe || !uv_is_writable(c->stream) || uv_shutdown(sht, c->stream, on_shutdown) == -1)
+  {
+    #ifdef DOCUMENT_CONNECTIONS
+    fprintf(stderr, "[%s] connection already closed by client\n", c->conn_id);
+    #endif
+    free(sht);
+    if (!c->dead_stream)
+      free(c->stream);
+    c->dead_stream = 1;
+    free(c);
+  }
+  if (c->client_public)
+    RSA_free(c->client_public);
+  */
+  
+  #ifdef DOCUMENT_CONNECTIONS
+  fprintf(stderr, "[%s] connection close routine finished\n", c->conn_id);
+  #endif
+}
+/*
+void reap(connection* c)
+{
+  pthread_mutex_lock(&deletion_queue_mutex);
+  int i, doreap = 0;
+  for (i = 0; i < deletion_queue_elems; ++i) {
+    
+  }
+}
+*/
+void on_write_packet(uv_write_t* req, int status)
+{
+  connection* c = (connection*)req->data;
+  if (status != 0) {
+    #ifdef DOCUMENT_CONNECTIONS
+    fprintf(stderr, "[%s] unable to write to socket (in callback)\n", c->conn_id);
+    #endif
+    c->conn_state = cs_error;
+    /*c->dead_stream = 1;*/
+  } else {
+    if (c->conn_state == cs_recv_syn)
+      c->conn_state = cs_wait_ack;
+    else if (c->conn_state == cs_recv_ack)
+      c->conn_state = cs_msg_loop;
+  }
+  pthread_mutex_unlock(&c->send_mutex);
+  connrelease(c);
+  free(req);
+}
+
+void on_write_async(uv_async_t* h, int status)
+{
+  connection* c = (connection*)h->data;
+  uv_buf_t buf = { .base = c->send_buffer, .len = c->send_length };
+  uv_write_t* req = (uv_write_t*)malloc(sizeof(uv_write_t));
+  req->data = c;
+  if (c->dead_stream || !uv_is_writable(c->stream) || uv_write(req, c->stream, &buf, 1, on_write_packet) == -1) {
+    #ifdef DOCUMENT_CONNECTIONS
+    fprintf(stderr, "[%s] unable to write to socket\n", c->conn_id);
+    #endif
+    c->conn_state = cs_error;
+    /*c->broken_pipe = 1;*/
+    
+    pthread_mutex_unlock(&c->send_mutex);
+    
+    connrelease(c);
+    free(req);
+  }
+  uv_close(h, freearg);
+}
+
+
+void write_async(connection* c)
+{
+  conngrab(c);
+  uv_async_t* async = (uv_async_t*)malloc(sizeof(uv_async_t));
+  async->data = c;
+  if (uv_async_init(loop, async, on_write_async) != -1) {
+    if (uv_async_send(async) == -1) {
+      #ifdef DOCUMENT_CONNECTIONS
+      fprintf(stderr, "[%s] could not dispatch async to write\n", c->conn_id);
+      #endif
+      
+      pthread_mutex_unlock(&c->send_mutex);
+      c->conn_state = cs_error;
+      connrelease(c);
+      free(async);
+    }
+  } else {
+    connrelease(c);
+    pthread_mutex_unlock(&c->send_mutex);
+    free(async);
+  }
+}
+
+void murderface(uv_handle_t* h, int status)
+{
+  uv_stop(loop);
+}
+
+void walk_cb(uv_handle_t* handle, void* arg)
+{
+  if (arg != handle) {
+    uv_close_cb ccb = freearg;
+    if (handle == &servconn)
+      ccb = NULL;
+    uv_close(handle, ccb);
+  }
+}
+
+void watchdog(uv_timer_t* a, int status)
+{
+  if (global_killswitch) {
+    uv_walk(loop, walk_cb, a);
+    uv_unref(loop);
+    uv_close(a, murderface);
+  }
+}
+
+void onexit()
+{
+  //fprintf(stderr,"%d buf1 failures and %d buf2 failures\n", buf1_fail, buf2_fail);
+  global_killswitch = 1;
+}
+
+const char vowels[] = "AEIOU";
+const char consonants[] = "BCDFGHJKLMNPQRSTVWXYZ";
+
+void handle_syn(connection* c)
+{
+  magic_type mgt;
+  tokentry* token;
+  byte buffer [MAX_MESSAGE_LENGTH], decbuffer [DECRYPTION_BUF_LENGTH], mac [MEGAKI_HASH_BYTES],
+       tokstr [MEGAKI_TOKEN_BYTES];
+  
+  //pthread_mutex_lock(&c->buffer_mutex);
+  memcpy(buffer, c->receive_buffer, MAGIC_BYTES);
+  //pthread_mutex_unlock(&c->buffer_mutex);
+  
+  mgt = mgk_check_magic(buffer);
+  if (mgt == magic_syn) {
+    int recovered;
+    //pthread_mutex_lock(&c->buffer_mutex);
+    memcpy(buffer, c->receive_buffer + MAGIC_BYTES, SYN_LENGTH - MAGIC_BYTES);
+    c->received_length = 0;
+    pthread_mutex_unlock(&c->buffer_mutex);
+    
+    /* decrypt block 1 */
+    if ((recovered = RSA_private_decrypt(MEGAKI_RSA_KEYSIZE / 8, buffer + MEGAKI_HASH_BYTES, decbuffer,
+        server_private, RSA_PKCS1_OAEP_PADDING)) == -1) {
+      #ifdef DOCUMENT_CONNECTIONS
+      fprintf(stderr, "[%s] could not decrypt block 1 of syn ciphertext:\n", c->conn_id);
+      ERR_print_errors_fp(stderr);
+      fprintf(stderr, "\n");
+      #endif
+
+      c->conn_state = cs_error;
+  
+      return;
+    }
+    
+    /* decrypt block 2 */
+    if (RSA_private_decrypt(MEGAKI_RSA_KEYSIZE / 8, buffer + MEGAKI_HASH_BYTES + MEGAKI_RSA_KEYSIZE / 8,
+        decbuffer + recovered, server_private, RSA_PKCS1_OAEP_PADDING) == -1) {
+      #ifdef DOCUMENT_CONNECTIONS
+      fprintf(stderr, "[%s] could not decrypt block 2 of syn ciphertext:\n\t", c->conn_id);
+      ERR_print_errors_fp(stderr);
+      fprintf(stderr, "\n");
+      #endif
+
+      c->conn_state = cs_error;
+      return;
+    }
+    
+    /* decode block 2 */
+    int i;
+    for (i = 0; i < MEGAKI_VERSION_BYTES + MEGAKI_RSA_KEYSIZE / 8 + 4 - recovered; ++i)
+      decbuffer[i + recovered] ^= decbuffer[i];
+    
+    #ifdef DOCUMENT_CONNECTIONS
+    fprintf(stderr, "[%s] syn plaintext:\n", c->conn_id);
+    hexdump(stderr, "SYNCLRT", decbuffer, MEGAKI_VERSION_BYTES + 4 + MEGAKI_RSA_KEYSIZE / 8);
+    printf("\n");
+    #endif
+    
+    /* compute MAC and check */
+    SHA256(decbuffer, MEGAKI_RSA_KEYSIZE / 8 + 4 + MEGAKI_VERSION_BYTES, mac);
+    if (!mgk_memeql(mac, buffer, MEGAKI_HASH_BYTES)) {
+      #ifdef DOCUMENT_CONNECTIONS
+      fprintf(stderr, "[%s] hash mismatch in syn packet\n", c->conn_id);
+      #endif
+      c->conn_state = cs_error;
+      return;
+    }
+    
+    /* fill client public key data */
+    c->client_public = RSA_new();
+    if (c->client_public == NULL) {
+      #ifdef DOCUMENT_CONNECTIONS
+      fprintf(stderr, "[%s] UNEXPECTED: RSA alloc fails\n", c->conn_id);
+      #endif
+      c->conn_state = cs_error;
+      return;
+    }
+      
+    if (!(c->client_public->n = BN_bin2bn(decbuffer, MEGAKI_RSA_KEYSIZE / 8, c->client_public->n))) {
+      #ifdef DOCUMENT_CONNECTIONS
+      fprintf(stderr, "[%s] UNEXPECTED: BN_bin2bn fails on modulus\n", c->conn_id);
+      #endif
+      c->conn_state = cs_error;
+      return;
+    }
+      
+    if (!(c->client_public->e = BN_bin2bn(decbuffer + MEGAKI_RSA_KEYSIZE / 8, 4, c->client_public->e))) {
+      #ifdef DOCUMENT_CONNECTIONS
+      fprintf(stderr, "[%s] UNEXPECTED: BN_bin2bn fails on exponent\n", c->conn_id);
+      #endif
+      c->conn_state = cs_error;
+      return;
+    }
+    
+    #ifdef DOCUMENT_CONNECTIONS
+    byte debugbuf[MEGAKI_RSA_KEYSIZE / 8];
+    BN_bn2bin(c->client_public->n, debugbuf);
+    fprintf(stderr, "[%s] retrieved client modulus/exponent:\n", c->conn_id);
+    hexdump(stderr, "CLNTMOD", debugbuf, BN_num_bytes(c->client_public->n));
+    BN_bn2bin(c->client_public->e, debugbuf);
+    hexdump(stderr, "CLNTEXP", debugbuf, BN_num_bytes(c->client_public->e));
+    fprintf(stderr, "\n");
+    #endif
+    
+    int badproto = 0, internalerror = 0;
+    const int off = MEGAKI_RSA_KEYSIZE / 8 + 4;
+    /* check the version first */
+    if (memcmp(MEGAKI_VERSION, decbuffer + off, MEGAKI_VERSION_BYTES) != 0) {
+      /* we're not running the same version of the protocol---sorry pal */
+      #ifdef DOCUMENT_CONNECTIONS
+      fprintf(stderr, "[%s] version mismatch, client uses %02X%02X and we're on %02X%02X\n", c->conn_id,
+        decbuffer[off], decbuffer[off + 1],
+        MEGAKI_VERSION[0], MEGAKI_VERSION[1]);
+      #endif
+      badproto = 1;
+    }
+    
+    /* so, the client has taken care to do an RSA pad-encrypt operation
+     * and to compute an SHA-256 hash. maybe she is worth our time...? */
+    mgk_fill_magic(buffer, magic_synack);
+    if (badproto) {
+      memcpy(decbuffer, MEGAKI_ERROR_TOKEN, MEGAKI_TOKEN_BYTES);
+      memcpy(decbuffer + MEGAKI_TOKEN_BYTES, MEGAKI_INCOMPATIBLE_VERSIONS_ERROR, MEGAKI_ERROR_CODE_BYTES);
+    } else {
+      if (!RAND_pseudo_bytes(tokstr, MEGAKI_TOKEN_BYTES)) {
+        #ifdef DOCUMENT_CONNECTIONS
+        fprintf(stderr, "[%s] UNEXPECTED: could not generate bytes for token\n", c->conn_id);
+        #endif
+        c->conn_state = cs_error;
+        return;
+      }
+      
+      token = tok_create(tokstr);
+      if (!token) {
+        memcpy(decbuffer, MEGAKI_ERROR_TOKEN, MEGAKI_TOKEN_BYTES);    
+        memcpy(decbuffer + MEGAKI_TOKEN_BYTES, MEGAKI_SERVICE_UNAVAILABLE_ERROR, MEGAKI_ERROR_CODE_BYTES);    
+        
+        #ifdef DOCUMENT_CONNECTIONS
+        fprintf(stderr, "[%s] UNEXPECTED: tok_create fails\n", c->conn_id);
+        #endif
+        internalerror = 1;
+      } else {
+        #ifdef DOCUMENT_CONNECTIONS
+        fprintf(stderr, "[%s] generated token:\n", c->conn_id);
+        hexdump(stderr, "SSTOKEN", tokstr, MEGAKI_TOKEN_BYTES);
+        #endif
+        c->tokent = token;
+        
+        memcpy(decbuffer, token->token, MEGAKI_TOKEN_BYTES);
+        memcpy(buffer + MAGIC_BYTES + MEGAKI_HASH_BYTES, token->token, MEGAKI_TOKEN_BYTES);
+        
+        /*memcpy(c->token, tokstr, MEGAKI_TOKEN_BYTES);*/
+        if (!RAND_bytes(decbuffer + MEGAKI_TOKEN_BYTES, MEGAKI_RSA_KEYSIZE / 8)) {
+          #ifdef DOCUMENT_CONNECTIONS
+          fprintf(stderr, "[%s] UNEXPECTED: could not generate bytes for srvsymm\n", c->conn_id);
+          #endif
+          c->conn_state = cs_error;
+          return;
+        }
+        #ifdef DOCUMENT_CONNECTIONS
+        fprintf(stderr, "[%s] generated srvsymm:\n", c->conn_id);
+        hexdump(stderr, "SRVSYMM", decbuffer + MEGAKI_TOKEN_BYTES, MEGAKI_AES_CBC_KEYSIZE / 8);
+        #endif
+        
+        SHA256(decbuffer, MEGAKI_TOKEN_BYTES + MEGAKI_AES_CBC_KEYSIZE / 8, buffer + MAGIC_BYTES);
+        
+        if ((RSA_public_encrypt(MEGAKI_TOKEN_BYTES + MEGAKI_AES_CBC_KEYSIZE / 8, decbuffer,
+          buffer + MAGIC_BYTES + MEGAKI_TOKEN_BYTES + MEGAKI_HASH_BYTES, c->client_public, RSA_PKCS1_OAEP_PADDING)) == -1) {
+          #ifdef DOCUMENT_CONNECTIONS
+          fprintf(stderr, "[%s] UNEXPECTED: could not encrypt syn-ack plaintext\n", c->conn_id);
+          #endif
+          c->conn_state = cs_error;
+          return;
+        }
+      } 
+    }
+    const int len = MAGIC_BYTES + MEGAKI_HASH_BYTES + MEGAKI_TOKEN_BYTES +
+    MEGAKI_RSA_KEYSIZE / 8;
+    
+    if (AES_set_decrypt_key(decbuffer + MEGAKI_TOKEN_BYTES, MEGAKI_AES_CBC_KEYSIZE, &c->symmetric_dec) != 0) {
+      #ifdef DOCUMENT_CONNECTIONS
+      fprintf(stderr, "[%s] UNEXPECTED: could not initialize AES decryption key\n", c->conn_id);
+      #endif
+      c->conn_state = cs_error;
+    }
+    memcpy(c->symmetric_raw, decbuffer + MEGAKI_TOKEN_BYTES, MEGAKI_AES_CBC_KEYSIZE / 8);
+    
+    pthread_mutex_lock(&c->send_mutex);
+    memcpy(c->send_buffer, buffer, len);
+    c->send_length = len;
+    if (!c->dead_stream) {
+      write_async(c);
+      refresh_timeout_async(c);
+    }
+    
+  } else {
+    #ifdef DOCUMENT_CONNECTIONS
+    fprintf(stderr, "[%s] invalid magic\n", c->conn_id);
+    #endif
+    pthread_mutex_unlock(&c->buffer_mutex);
+    c->conn_state = cs_error;
+  }
+}
+
+void handle_syn_wrapper(void* param)
+{
+  connection* c = (connection*)param;
+  uv_handle_t* h = c->stream;
+  handle_syn(c);
+  
+  if (c->conn_state == cs_error) {
+    #ifdef DOCUMENT_CONNECTIONS
+    fprintf(stderr, "[%s] error state (after syn): closing connection\n", c->conn_id);
+    #endif
+    close_async(c);
+    //uv_close(h, close_cb);
+  }
+  connrelease(c);
+  
+}
+
+ void handle_ack(connection* c)
+{
+  magic_type mgt;
+  byte buffer [MAX_MESSAGE_LENGTH], decbuffer [MEGAKI_TOKEN_BYTES + MEGAKI_AES_CBC_KEYSIZE / 8],
+       mac [MEGAKI_HASH_BYTES];
+
+  memcpy(buffer, c->receive_buffer, MAGIC_BYTES);
+  mgt = mgk_check_magic(buffer);
+  if (mgt != magic_ack) {
+    #ifdef DOCUMENT_CONNECTIONS
+    fprintf(stderr, "[%s] invalid ack magic\n", c->conn_id);
+    #endif
+    pthread_mutex_unlock(&c->buffer_mutex);
+    c->conn_state = cs_error;
+    return;
+  }
+  
+  memcpy(buffer, c->receive_buffer + MAGIC_BYTES, ACK_LENGTH - MAGIC_BYTES);
+  c->received_length = 0;
+  pthread_mutex_unlock(&c->buffer_mutex);
+  
+  if (!mgk_memeql(buffer + MEGAKI_HASH_BYTES, c->tokent->token, MEGAKI_TOKEN_BYTES)) {
+    #ifdef DOCUMENT_CONNECTIONS
+    fprintf(stderr, "[%s] token mismatch\n", c->conn_id);
+    #endif
+    c->conn_state = cs_error;
+    return;
+  } 
+  
+  AES_cbc_encrypt(buffer + MEGAKI_HASH_BYTES + MEGAKI_TOKEN_BYTES + MEGAKI_AES_BLOCK_BYTES,
+                  decbuffer, AES_ENCRYPTED_SIZE(MEGAKI_TOKEN_BYTES + MEGAKI_AES_CBC_KEYSIZE / 8),
+                  &c->symmetric_dec, buffer + MEGAKI_HASH_BYTES +
+                  MEGAKI_TOKEN_BYTES, AES_DECRYPT);
+  SHA256(decbuffer, MEGAKI_TOKEN_BYTES + MEGAKI_AES_CBC_KEYSIZE / 8, mac);
+  
+  if (!mgk_memeql(buffer, mac, MEGAKI_HASH_BYTES)) {
+    #ifdef DOCUMENT_CONNECTIONS
+    fprintf(stderr, "[%s] hash mismatch\n", c->conn_id);
+    #endif
+    c->conn_state = cs_error;
+    return;
+  }
+  if (!mgk_memeql(buffer + MEGAKI_HASH_BYTES, decbuffer, MEGAKI_TOKEN_BYTES)) {
+    #ifdef DOCUMENT_CONNECTIONS
+    fprintf(stderr, "[%s] token mismatch inside the packet\n", c->conn_id);
+    #endif
+    c->conn_state = cs_error;
+    return;
+  }
+  
+  #ifdef DOCUMENT_CONNECTIONS
+  fprintf(stderr, "[%s] client symmetric secret:\n", c->conn_id);
+  hexdump(stderr, "CLTSYMM", decbuffer + MEGAKI_TOKEN_BYTES, MEGAKI_AES_CBC_KEYSIZE / 8);
+  #endif
+  
+  int i;
+  for (i = 0; i < MEGAKI_AES_CBC_KEYSIZE / 8; ++i)
+    c->symmetric_raw[i] = (~c->symmetric_raw[i]) ^ decbuffer[MEGAKI_TOKEN_BYTES + i];
+  memcpy(c->tokent->payload, c->symmetric_raw, MEGAKI_AES_CBC_KEYSIZE / 8);
+  if (AES_set_encrypt_key(c->symmetric_raw, MEGAKI_AES_CBC_KEYSIZE, &c->symmetric_enc) != 0) {
+    #ifdef DOCUMENT_CONNECTIONS
+    fprintf(stderr, "[%s] UNEXPECTED: could not init master AESENC\n", c->conn_id);
+    #endif
+    c->conn_state = cs_error;
+    return;
+  }
+  if (AES_set_decrypt_key(c->symmetric_raw, MEGAKI_AES_CBC_KEYSIZE, &c->symmetric_dec) != 0) {
+    #ifdef DOCUMENT_CONNECTIONS
+    fprintf(stderr, "[%s] UNEXPECTED: could not init master AESDEC\n", c->conn_id);
+    #endif
+    c->conn_state = cs_error;
+    return;
+  }
+  refresh_timeout_async(c);
+  
+  #ifdef DOCUMENT_CONNECTIONS
+  fprintf(stderr, "[%s] master communication secret:\n", c->conn_id);
+  hexdump(stderr, "MSTRSYM", buffer, MEGAKI_AES_CBC_KEYSIZE / 8);
+  //hexdump(stderr, "MSTRSYM", buffer, MEGAKI_AES_CBC_KEYSIZE / 8);
+  #endif
+}
+
+void handle_ack_wrapper(void* param)
+{
+  connection* c = (connection*)param;
+  handle_ack(c);
+  
+  if (c->conn_state == cs_error) {
+    #ifdef DOCUMENT_CONNECTIONS
+    fprintf(stderr, "[%s] error state (after ack): closing connection\n", c->conn_id);
+    #endif
+    /*uv_close(c->stream, close_cb);*/
+    close_async(c);
+  }
+  connrelease(c);
+}
+
+void alloc_buffer(uv_handle_t* handle, size_t size, uv_buf_t* buf) {
+  *buf = uv_buf_init((char*)uvbuf, (size > LIBUV_BUFFER_BYTES ? LIBUV_BUFFER_BYTES : size));
+}
+
+void fill_buffer(connection* conn, ssize_t nread, uv_buf_t buf)
+{
+  pthread_mutex_lock(&conn->buffer_mutex);
+  memcpy(conn->receive_buffer + conn->received_length, buf.base, nread);
+  conn->received_length += nread;  
+  pthread_mutex_unlock(&conn->buffer_mutex);
+}
+
+void on_read(uv_stream_t* stream, ssize_t nread, uv_buf_t *pbuf)
+{
+  connection* conn = (connection*)stream->data;
+  conngrab(conn);
+  
+  if (nread < 0 || conn->conn_state == cs_error) {
+    #ifdef DOCUMENT_CONNECTIONS
+    fprintf(stderr, "[%s] closing connection (%s)\n", conn->conn_id, uv_strerror(nread));
+    #endif
+    conn->dead_stream = 1;
+    uv_close(conn->stream, close_cb);
+    connrelease(conn);
+    return;
+  }
+  
+  ssize_t newlength = conn->received_length + nread;
+  
+  switch(conn->conn_state) {
+  case cs_wait_syn:
+    if (newlength == SYN_LENGTH) {
+      conn->conn_state = cs_recv_syn;
+      uv_timer_stop(&conn->timeout_timer);
+      fill_buffer(conn, nread, *pbuf);
+      pthread_mutex_lock(&conn->buffer_mutex);
+      conngrab(conn);
+      threadpool_add(pool, handle_syn_wrapper, conn, 0);
+    } else if (newlength > SYN_LENGTH) {
+      #ifdef DOCUMENT_CONNECTIONS
+      fprintf(stderr, "[%s] too much data, closing\n", conn->conn_id);
+      #endif
+      
+      uv_close(conn->stream, close_cb);
+    } else {
+      fill_buffer(conn, nread, *pbuf);
+    }
+    
+    break;
+    
+  case cs_recv_syn:
+    break;
+    
+  case cs_wait_ack:
+    if (newlength == ACK_LENGTH) {
+      conn->conn_state = cs_recv_ack;
+      uv_timer_stop(&conn->timeout_timer);
+      fill_buffer(conn, nread, *pbuf);
+      pthread_mutex_lock(&conn->buffer_mutex);
+      conngrab(conn);
+      threadpool_add(pool, handle_ack_wrapper, conn, 0);
+    } else if (newlength > ACK_LENGTH) {
+      #ifdef DOCUMENT_CONNECTIONS
+      fprintf(stderr, "[%s] too much data, closing\n", conn->conn_id);
+      #endif
+      uv_close(conn->stream, close_cb);
+    } else {
+      fill_buffer(conn, nread, *pbuf);
+    }
+    break;
+    
+  case cs_error:
+    break;
+    
+  case cs_msg_loop:
+    break;
+  };
+  connrelease(conn);
+}
+
+
+void on_connect(uv_stream_t* server, int status)
+{
+  if (status == -1) {
+    #ifdef DOCUMENT_CONNECTIONS
+    fprintf(stderr, "[HYPRVS] connection attempt fail\n");
+    return;
+    #endif
+  }
+  uv_tcp_t* client = malloc(sizeof(uv_tcp_t));
+  if (uv_tcp_init(loop, client) == -1) {
+    #ifdef DOCUMENT_CONNECTIONS
+    fprintf(stderr, "[HYPRVS] uv_tcp_init fail\n");
+    #endif 
+    free(client);   
+    return;
+  }
+  
+  if (uv_accept(server, (uv_stream_t*)client) == 0) {
+    int connsocket = client->accepted_fd; /* AH HA HA HA BREAKING MULTIPLATFORM CODE */
+    setsockopt(connsocket, SOL_SOCKET, SO_RCVTIMEO, (char*)&tv, sizeof(struct timeval));
+    setsockopt(connsocket, SOL_SOCKET, SO_LINGER, &lin, sizeof(lin));
+
+    /*byte buffer[MAX_MESSAGE_LENGTH], decbuffer[DECRYPTION_BUF_LENGTH], mac[MEGAKI_HASH_BYTES],
+         tokstr[MEGAKI_TOKEN_BYTES];*/
+         
+    connection *c = malloc(sizeof(connection));
+    memset(c, 0, sizeof(connection));
+    client->data = c;
+    c->stream = (uv_stream_t*)client;
+    c->refcount = 1;
+    uv_timer_init(loop, &c->timeout_timer);
+    c->timeout_timer.data = c;
+    
+    #ifdef DOCUMENT_CONNECTIONS
+    char cons[7];
+    int consi;
+    for (consi = 0; consi < 6; ++consi) {
+      if (consi % 2 == 0)
+        cons[consi] = consonants[rand() % (sizeof consonants - 1)];
+      else cons[consi] = vowels[rand() % (sizeof vowels - 1)];
+    }
+    cons[6] = '\0';
+    memcpy(c->conn_id, cons, 7);
+    fprintf(stderr, "[%s] opening connection\n", cons);
+    #endif
+    
+    pthread_mutex_init(&c->buffer_mutex, NULL);
+    pthread_mutex_init(&c->send_mutex, NULL);
+    pthread_mutex_init(&c->ref_mutex, NULL);
+    
+    refresh_timeout(c);
+    c->conn_state = cs_wait_syn;
+    uv_read_start((uv_stream_t*)client, alloc_buffer, on_read);
+  } else {
+    uv_close((uv_handle_t*) client, NULL);
+  }
+}
+
+#define CHECK(res, reason) \
+  if ((res) != 0) { \
+    fprintf(stderr, "fatal: %s (%s)\n", (reason), uv_strerror(res)); \
+    return(-1); \
+  }
+  
+int server()
+{
+  int res;
+  loop = uv_default_loop();
+  
+  struct sockaddr_in addr;
+  res = uv_ip4_addr(opt_addr, atoi(opt_port), &addr);
+  if (res != 0) {
+    fprintf(stderr, "fatal: could not resolve local address %s:%d (%s)\n", opt_addr, atoi(opt_port), uv_strerror(res));
+    return(-1);
+  }
+  
+  pool = threadpool_create(opt_threads, opt_queuelength, 0);
+  if (pool == NULL) {
+    fprintf(stderr, "fatal: could not create threadpool\n");
+    EVP_cleanup();
+    ERR_free_strings();
+    CRYPTO_cleanup_all_ex_data();
+    return(-1);
+  }
+  fprintf(stderr, "created threadpool of %d threads with a queue of %d\n",
+    opt_threads, opt_queuelength);
+  
+  ssl_thread_setup();
+  
+  res = uv_tcp_init(loop, &servconn);
+  CHECK(res, "could not init libuv tcp");
+  res = uv_tcp_bind(&servconn, (struct sockaddr*)&addr, 0);
+  CHECK(res, "could not bind to local address");
+  
+  uv_timer_init(loop, &watchdog_tmr);
+  uv_timer_start(&watchdog_tmr, watchdog, WATCHDOG_INTERVAL, WATCHDOG_INTERVAL);
+  
+  res = uv_listen((uv_stream_t*)&servconn, SOCKET_BACKLOG, on_connect);
+  CHECK(res, "could not listen for connections");
+  
+  fprintf(stderr, "bound and listening on %s:%s\n", opt_addr, opt_port);
+  res = uv_run(loop, UV_RUN_DEFAULT);
+  threadpool_destroy(pool, 0);  
+  /*res = uv_loop_close(loop);
+  fprintf(stderr,"%d %s\n",res,uv_strerror(res));*/
+  uv_loop_delete(loop);
+  
+  tokshutdown();
+  if (opt_port)
+    free(opt_port);
+  if (opt_addr)
+    free(opt_addr);
+  if (opt_cert)
+    free(opt_cert);
+  if (opt_cert_passphrase)
+    free(opt_cert_passphrase);
+  RSA_free(server_private);
+  ssl_thread_cleanup();
+  EVP_cleanup();
+  ERR_free_strings();
+  CRYPTO_cleanup_all_ex_data();
+  
+  return(res);
+}
+
+void handle_signal(int s) {
+  
+  fprintf(stderr, "received termination signal, quitting\n");
+  onexit();
+  return;
+}
+
+void process_option(char* s, int allow_config)
+{
+  char *left, *right, *p, *p1, *p2;
+  size_t len, mode = 0;
+  FILE * conf;
+  
+  len = strlen(s);
+  if (len <= MAX_ARG_LENGTH) {
+    left = (char*)malloc((len + 1) * sizeof(char));
+    right = (char*)malloc((len + 1) * sizeof(char));
+    
+    if (left == NULL || right == NULL) {
+      fprintf(stderr, "fatal: memory allocation failed. we shall not continue\n");
+      exit(-1);
+    }
+    
+    p1 = left;
+    p2 = right;
+    
+    memset(left, 0, (len + 1) * sizeof(char));
+    memset(right, 0, (len + 1) * sizeof(char));
+    
+    mode = 0;
+    for (p = s; *p; ++p) {
+      if (mode == 0 && *p == '=')
+        mode = 1;
+      else {
+        if (mode == 0) 
+          *p1++ = *p;
+        else
+          *p2++ = *p;
+      }
+    }
+    
+    len = strlen(left);
+    if (!strcmp(left, "addr")) {
+      opt_addr = right;
+    } else if (!strcmp(left, "port")) {
+      opt_port = right;
+    } else if (!strcmp(left, "daemonize")) {
+      opt_daemonize = atoi(right);
+      free(right);
+    } else if (!strcmp(left, "cert")) {
+      opt_cert = right;
+    } else if (!strcmp(left, "cert-passphrase")) {
+      opt_cert_passphrase = right;
+    } else if (!strcmp(left, "threads")) {
+      opt_threads = atoi(right);
+      free(right);
+    } else if (!strcmp(left, "queue-length")) {
+      opt_queuelength = atoi(right);
+      free(right);
+    } else if (allow_config && !strcmp(left, "config")) {
+      conf = fopen(right, "r");
+      if (!conf) {
+        perror("fopen()");
+        fprintf(stderr, "could not open config file\n");
+      } else {
+        char line[CONFIG_MAXLINESIZE];
+        
+        while (!feof(conf)) {
+          memset(line, 0, sizeof(line));
+          fgets(line, CONFIG_MAXLINESIZE * sizeof(char), conf);
+          len = strlen(line);
+          
+          if (len) {
+            line[len - 1] = '\0';
+            process_option(line, 0);
+          }
+        }
+        free(right);
+        fclose(conf);
+      }
+    } else {
+      fprintf(stderr, "Unknown option: %s\n", left);
+      free(right);
+      return;
+    }
+    free(left);
+  }
+  
+  return;
+}
+
+void defaults()
+{
+  opt_daemonize = 1;
+  opt_threads = 10;
+  opt_queuelength = 40;
+  opt_cert = opt_cert_passphrase = NULL;
+}
+
+int main(int argc, char** argv)
+{
+  char** arg;
+  
+  ERR_load_crypto_strings();
+  OpenSSL_add_all_ciphers();
+  if (!tokinit(MAX_TOKENS, MAX_TOKEN_BUCKETS)) {
+    fprintf(stderr, "fatal: could not load the token bank\n");
+    exit(-1);
+  }
+  
+  defaults();
+  for (arg = argv + 1; arg < argv + argc; ++arg) {
+    process_option(*arg, 1);
+  }
+  
+  tv.tv_sec = RECEIVE_TIMEOUT;
+  tv.tv_usec = 0;
+  
+  lin.l_onoff = 1;
+  lin.l_linger = LINGER_SECONDS;
+  
+  if (!opt_cert) {
+    fprintf(stderr, "fatal: no certificate provided\n");
+    return(-1);
+  }
+  
+  FILE * f = fopen(opt_cert, "r");
+  if (!f) {
+    fprintf(stderr, "fatal: could not open certificate file '%s' for reading\n", opt_cert);
+    return(-1);
+  }
+  
+  if (PEM_read_RSAPrivateKey(f, &server_private, NULL, opt_cert_passphrase) == NULL) {
+    fprintf(stderr, "fatal: failed reading PEM file: %s\n", ERR_reason_error_string(ERR_get_error()));
+    return(-1);
+  }
+  fclose(f);
+  
+  srand(time(NULL));
+  
+  struct sigaction siginth;  
+  siginth.sa_handler = handle_signal;
+  sigemptyset(&siginth.sa_mask);
+  siginth.sa_flags = 0;
+  sigaction(SIGINT, &siginth, NULL);
+  
+  if (opt_daemonize) {
+    if (fork() == 0) {
+      return( server() );
+    } else {
+      return(0);
+    }
+  } else {
+    return( server() );
+  }
+}
+
