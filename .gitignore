@@ -1,0 +1,12 @@
+# ignore backup files
+*~
+
+# ignore private certificates
+*.pem
+
+# ignore binary files
+*.o
+mkd/bin/*
+libsazukari/bin/*
+legacy/megaki/bin/*
+
