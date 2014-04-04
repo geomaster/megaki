@@ -232,7 +232,7 @@ failure:
 int yugi_start(yugi_t* yc)
 {
   uv_loop_t* l = yc->uv_loop;
-  yc->yami_iniths_len = yami_get_initmsg_size();
+  yc->yami_iniths_len = yami_get_tunnel_headlen();
   yc->dropped_connections = 0;
   
   int res = -1;
@@ -416,10 +416,11 @@ void on_client_connect(uv_stream_t* server, int status)
   conn->stream =  (uv_stream_t*) client;
   conn->is_closed = 0;
   conn->is_timed = 1;
-  conn->tunnelheadlen = -1;
+  conn->tunnelheadlen = yc->yami_iniths_len;
   conn->recvlen = 0;
-  conn->sndlen = 0;
+  conn->sndlen = 0; 
   conn->expectlen = yc->yami_iniths_len;
+  //memcpy(conn->expectlen, yc->yami_iniths_len, YAMI_MAX_PACKET_VARIANCE);
   
   #ifdef YUGI_DEBUG
   dbg_generate_connection_id(conn->dbg_id);
@@ -631,12 +632,12 @@ void on_data_read(uv_stream_t* stream, ssize_t nread, const uv_buf_t* buf)
   
   pthread_mutex_lock(&c->recvmut);
   int newsize = c->recvlen + (int) nread;
-  if (c->tunnelheadlen > 0) {
+//  if (c->tunnelheadlen > 0) {
     uv_timer_start(&c->timeout_tmr, &on_timeout_tick, yc->config.receive_timeout, 0);
     
     if (newsize >= c->tunnelheadlen) {
       YUGI_LOGCONNS(c, "Asking Yami for expected length");
-      int res = yami_tunnel_get_msglen(YUGI_CYAMI(c), (byte*) buf->base, (length_t*) &c->expectlen);
+      int res = yami_get_packetlen(YUGI_CYAMI(c), (byte*) buf->base, (length_t*) &c->expectlen);
       
       if (!res) {
         YUGI_LOGCONNS(c, "Yami does not approve of the tunnel header, closing connection");
@@ -646,7 +647,7 @@ void on_data_read(uv_stream_t* stream, ssize_t nread, const uv_buf_t* buf)
                             c->expectlen - c->tunnelheadlen);
       }
     }
-  }
+//  }
   
   if (newsize > c->expectlen) {
     YUGI_LOGCONNF(c, "expect:%d newsize:%d nread:%d\n", (int)c->expectlen, (int)newsize, (int)nread);
@@ -713,7 +714,6 @@ void job_handle_message(void* data)
   
   yami_resp_t resp = yami_incoming(YUGI_CYAMI(c), c->recvbuf, len);
   c->sndlen = resp.data_size;
-  c->schedexpectlen = resp.new_expected_size;
   
   if (resp.data_size > 0) {
     YUGI_LOGCONNF(c, "Sending %d bytes of data from Yami", resp.data_size);
@@ -727,10 +727,8 @@ void job_handle_message(void* data)
       close_connection_async(c);
     }
   } else {
-    if (c->tunnelheadlen > 0)
-      c->schedexpectlen = c->tunnelheadlen;
-    
-    if (resp.start_tunneling) {
+    if (resp.tunneling_header_length > 0) {
+      c->schedexpectlen = resp.tunneling_header_length;
       YUGI_LOGCONNF(c, "Started tunneling to Yami with message preamble of %d "
                        "bytes", resp.tunneling_header_length);
       c->tunnelheadlen = resp.tunneling_header_length;

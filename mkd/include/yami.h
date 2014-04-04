@@ -2,6 +2,7 @@
 #define __YAMI_H__
 #include "common.h"
 #define YAMI_MAX_PACKET_LENGTH            8400
+#define YAMI_MAX_PACKET_VARIANCE          2
 
 /** Is this a debug build? **/
 #ifdef DEBUG
@@ -31,11 +32,9 @@ typedef struct yami_conf_t {
 typedef struct yami_ctx_t yami_ctx_t;
 
 typedef struct yami_resp_t {
-  byte      end_connection,
-            start_tunneling;
+  byte      end_connection;
   length_t  data_size,
-            tunneling_header_length,
-            new_expected_size;
+            tunneling_header_length;
 } yami_resp_t;
 /** End Yami structures **/
 
@@ -44,9 +43,9 @@ void        yami_version(int* major, int* minor, int* revision, char** suffix);
 const char* yami_strversion();
 int         yami_getcontextsize();
 int         yami_init(yami_conf_t* config);
-length_t    yami_get_initmsg_size();
-int         yami_tunnel_get_msglen(yami_ctx_t* ctx, byte* header,
-                                   length_t* o_len);
+length_t    yami_get_tunnel_headlen();
+int         yami_get_packetlen(yami_ctx_t* ctx, byte* header,
+                               length_t* o_len);
 void        yami_new_ctx(yami_ctx_t* ctx);
 yami_resp_t yami_incoming(yami_ctx_t* ctx, byte* buffer, length_t length);
 //void        yami_destroy_ctx(yami_ctx_t* ctx);

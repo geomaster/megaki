@@ -71,6 +71,8 @@ typedef struct yami_ctx_t {
 
 #else
 #define YAMI_ASSERT(cond, msg)
+#define YAMI_DIAGLOGS(s)
+#define YAMI_DIAGLOGF(f, ...)
 #endif
 /** End debug macros **/
 
@@ -160,9 +162,9 @@ cleanup_ossl:
   return(-1);
 }
 
-length_t yami_get_initmsg_size()
+length_t yami_get_tunnel_headlen()
 {
-  return( sizeof(mgk_syn_t) );
+  return( sizeof(mgk_header_t) );
 }
 
 void yami_new_ctx(yami_ctx_t* ctx)
@@ -173,8 +175,8 @@ void yami_new_ctx(yami_ctx_t* ctx)
 yami_resp_t yami_incoming(yami_ctx_t* ctx, byte* buffer, length_t length)
 {
   yami_resp_t resp;
-  resp.start_tunneling = 0;
   resp.data_size = 0;
+  resp.tunneling_header_length = sizeof(mgk_header_t);
   
   mgk_header_t* hdr = (mgk_header_t*) buffer;
   if (!mgk_check_magic(hdr)) {
@@ -225,21 +227,35 @@ kill_connection:
   return(resp);
 }
 
-int yami_tunnel_get_msglen(yami_ctx_t* ctx, byte* header, length_t* len)
+int yami_get_packetlen(yami_ctx_t* ctx, byte* header, length_t* len)
 {
-  const mgk_msgpreamble_t* preamble = (mgk_msgpreamble_t*) header;
-  if (!mgk_check_magic(&preamble->header) ||
-      preamble->header.type != magic_msg) 
-    return(0);
-  
-  uint32_t msglen = ntohl(preamble->length);
-  if (msglen <= 0)
-    return(0);
-  
-  /* expect full message header (incl. this preamble) and 
-   * bytes announced */
-  *len = sizeof(mgk_msghdr_t) + MEGAKI_AES_ENCSIZE(msglen);
-  return(1);
+  mgk_header_t* hdr = (mgk_header_t*) header;
+  const mgk_msgpreamble_t* preamble; 
+  switch (hdr->type) {
+    case magic_syn:
+      *len = sizeof(mgk_syn_t);
+      return(1);
+      
+    case magic_ack:
+      *len = sizeof(mgk_ack_t);
+      return(1);
+      
+    case magic_msg:
+      preamble = (mgk_msgpreamble_t*) header;
+      if (!mgk_check_magic(&preamble->header) ||
+          preamble->header.type != magic_msg) 
+        return(0);
+      
+      uint32_t msglen = ntohl(preamble->length);
+      if (msglen <= 0)
+        return(0);
+    
+      /* expect full message header (incl. this preamble) and 
+      * bytes announced */
+      *len = sizeof(mgk_msghdr_t) + MEGAKI_AES_ENCSIZE(msglen);
+      return(1);
+  }
+  return(0);
 }
 
 void yami_destroy()
@@ -332,7 +348,6 @@ void handle_syn(yami_ctx_t* ctx, yami_resp_t* resp, byte* buffer)
     YAMI_DIAGLOGS("Failed to assemble SYN-ACK");
     goto destroy_rsa;
   } else {
-    resp->new_expected_size = sizeof( mgk_ack_t );
     resp->data_size = sizeof( mgk_synack_t );
     ctx->state = MGS_WAITING_ACK;
   }
@@ -478,7 +493,6 @@ void handle_ack(yami_ctx_t* ctx, yami_resp_t* resp, byte* buffer)
   ackack->header.type = magic_ackack;
   
   resp->data_size = sizeof(mgk_ackack_t);
-  resp->start_tunneling = 1;
   resp->tunneling_header_length = sizeof( mgk_msgpreamble_t );
   resp->end_connection = 0;
   ctx->state = MGS_TUNNEL_READY;
