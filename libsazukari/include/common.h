@@ -18,6 +18,10 @@
 #define MEGAKI_VERSION_BYTES              2
 #define MEGAKI_LENGTH_BYTES               4
 
+#define MEGAKI_AES_KEYBYTES               (MEGAKI_AES_KEYSIZE / 8)
+#define MEGAKI_RSA_EXPBYTES               (MEGAKI_RSA_EXPSIZE / 8)
+#define MEGAKI_RSA_KEYBYTES               (MEGAKI_RSA_KEYSIZE / 8)
+
 typedef uint8_t byte;
 typedef uint32_t length_t;
 typedef int32_t slength_t;

@@ -14,10 +14,12 @@ typedef struct szkr_ctx_t {
   mgk_token_t     token;
   mgk_aes_key_t   server_symmetric,
                   master_symmetric;
-  RSA*            client_rsa;
+  RSA             *client_rsa,
+                  *server_rsa;
   AES_KEY         kenc, kdec;
   szkr_iostream_t ios;
   szkr_err_t      last_err;
+  szkr_srvkey_t   srvkey;
   
   enum szkrctx_state {
     state_inactive,
@@ -53,13 +55,14 @@ int szkr_init()
   return(1);
 }
 
-int szkr_new_ctx(szkr_ctx_t* ctx, szkr_iostream_t ios)
+int szkr_new_ctx(szkr_ctx_t* ctx, szkr_iostream_t ios, szkr_srvkey_t srvkey)
 {
   ctx->state = state_inactive;
   ctx->ios = ios; 
   ctx->client_rsa = NULL;
   ctx->last_err = szkr_err_none;
   ctx->state = state_inactive;
+  ctx->srvkey = srvkey;
   
   return(1);
 }
@@ -67,8 +70,9 @@ int szkr_new_ctx(szkr_ctx_t* ctx, szkr_iostream_t ios)
 int szkr_reset_ctx(szkr_ctx_t* ctx)
 {
   szkr_iostream_t ios = ctx->ios;
+  szkr_srvkey_t srvkey = ctx->srvkey;
   szkr_destroy_ctx(ctx);
-  return( szkr_new_ctx(ctx, ios) );
+  return( szkr_new_ctx(ctx, ios, srvkey) );
 }
 
 szkr_err_t szkr_last_error(szkr_ctx_t* ctx)
@@ -194,5 +198,47 @@ int read_packet(szkr_iostream_t* ios, byte* buffer, length_t packetlen)
 int write_packet(szkr_iostream_t* ios, byte* buffer, length_t packetlen)
 {
   return (ios->write_callback(buffer, packetlen, ios->cb_param) == packetlen);
-}   
+}  
+
+int rsa_keygen(szkr_ctx_t* ctx)
+{
+  ctx->server_rsa = RSA_new();
+  if (!ctx->server_rsa)
+    goto failure;
+  
+  if (!(ctx->server_rsa->n = BN_bin2bn(ctx->srvkey.modulus, MEGAKI_RSA_KEYBYTES,
+                                      NULL)))
+    goto destroy_srvrsa;
+
+  if (!(ctx->server_rsa->e = BN_bin2bn(ctx->srvkey.exponent, MEGAKI_RSA_EXPBYTES,
+                                      NULL)))
+    goto destroy_srvmod;
+  
+  ctx->client_rsa = RSA_new();
+  if (!ctx->client_rsa)
+    goto destroy_srvexp;
+
+  if (!RSA_generate_key_ex(ctx->client_rsa, MEGAKI_RSA_KEYSIZE, 
+                           ctx->server_rsa->e, NULL)) 
+    goto destroy_clrsa;
+ 
+  return(0);
+  
+destroy_clrsa:
+  RSA_free(ctx->client_rsa);
+  
+destroy_srvexp:
+  BN_free(ctx->server_rsa->e);
+  ctx->server_rsa->e = NULL;
+  
+destroy_srvmod:
+  BN_free(ctx->server_rsa->n);
+  ctx->server_rsa->n = NULL;
+  
+destroy_srvrsa:
+  RSA_free(ctx->server_rsa);
+  
+failure:
+  return(-1);
+}
 /** End Sazukari internal functions definitions **/

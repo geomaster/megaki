@@ -3,9 +3,6 @@
 #include "common.h"
 #include <stdint.h>
 
-#define MEGAKI_AES_KEYBYTES               (MEGAKI_AES_KEYSIZE / 8)
-#define MEGAKI_RSA_EXPBYTES               (MEGAKI_RSA_EXPSIZE / 8)
-#define MEGAKI_RSA_KEYBYTES               (MEGAKI_RSA_KEYSIZE / 8)
 /* - 42 because of PKCS#1-OAEP, see RSA_public_encrypt(3ssl) */
 #define MEGAKI_RSA_BLOCK_BYTES            (MEGAKI_RSA_KEYBYTES - 42)
 

@@ -6,6 +6,11 @@
 /** Sazukari public declarations **/
 typedef struct szkr_ctx_t szkr_ctx_t;
 
+typedef struct szkr_srvkey_t {
+  byte modulus [ MEGAKI_RSA_KEYBYTES ],
+       exponent[ MEGAKI_RSA_EXPBYTES ];
+} szkr_srvkey_t;
+
 typedef enum szkr_err_t {
   szkr_err_none,
   szkr_err_unknown,
@@ -33,7 +38,8 @@ typedef struct szkr_iostream_t {
 /** Sazukari public API **/
 int        szkr_init();
 int        szkr_get_ctxsize();
-int        szkr_new_ctx(szkr_ctx_t* ctx, szkr_iostream_t ios);
+int        szkr_new_ctx(szkr_ctx_t* ctx, szkr_iostream_t ios,
+                        szkr_srvkey_t srvkey);
 int        skzr_reset_ctx(szkr_ctx_t* ctx);
 int        szkr_do_handshake(szkr_ctx_t* ctx);
 szkr_err_t szkr_last_error(szkr_ctx_t* ctx);
