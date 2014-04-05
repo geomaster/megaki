@@ -11,8 +11,10 @@ typedef enum szkr_err_t {
   szkr_err_unknown,
   szkr_err_incompatible_versions,
   szkr_err_service_unavailable,
-  skzr_err_invalid_state,
+  szkr_err_invalid_state,
   szkr_err_protocol,
+  szkr_err_internal,
+  szkr_err_io,
   szkr_err_rehandshake_needed,
   szkr_err_server_blacklisted
 } szkr_err_t;
@@ -32,8 +34,8 @@ typedef struct szkr_iostream_t {
 int        szkr_init();
 int        szkr_get_ctxsize();
 int        szkr_new_ctx(szkr_ctx_t* ctx, szkr_iostream_t ios);
+int        skzr_reset_ctx(szkr_ctx_t* ctx);
 int        szkr_do_handshake(szkr_ctx_t* ctx);
-int        szkr_redo_handshake(szkr_ctx_t* ctx);
 szkr_err_t szkr_last_error(szkr_ctx_t* ctx);
 int        szkr_send_message(szkr_ctx_t*, const byte* msg, length_t msglen, 
                              byte* responsebuf, length_t* responselen);

@@ -28,12 +28,15 @@ typedef struct szkr_ctx_t {
 /** End definitions of Sazukari objects **/
 
 /** Sazukari internal functions **/
-int assemble_syn(szkr_ctx_t* ctx, byte* outbuf);
-int handle_synack(szkr_ctx_t* ctx, byte* inbuf, length_t len);
-int check_ackack(byte* buf, length_t len);
-int assemble_ack(szkr_ctx_t* ctx, byte* outbuf);
-int decode_msg(szkr_ctx_t* ctx, const byte* imsg, length_t len, byte* obuf, length_t *olen);
-int assemble_msg(szkr_ctx_t* ctx, const byte* inmsg, byte* outresp, length_t* resplen);
+int        assemble_syn(szkr_ctx_t* ctx, mgk_syn_t* osyn);
+szkr_err_t handle_synack(szkr_ctx_t* ctx, mgk_synack_t* isynack);
+int        check_ackack(mgk_ackack_t* iackack);
+int        assemble_ack(szkr_ctx_t* ctx, mgk_ack_t* oack);
+szkr_err_t decode_msg(szkr_ctx_t* ctx, const byte* imsg, length_t len, byte* obuf, length_t *olen);
+int        assemble_msg(szkr_ctx_t* ctx, const byte* inmsg, byte* outresp, length_t* resplen);
+int        read_packet(szkr_iostream_t* ios, byte* buffer, length_t packetlen);
+int        write_packet(szkr_iostream_t* ios, byte* buffer, length_t packetlen);
+int        rsa_keygen(szkr_ctx_t* ctx);
 /** End Sazukari internal functions **/
 
 /** Sazukari public API **/
@@ -56,8 +59,16 @@ int szkr_new_ctx(szkr_ctx_t* ctx, szkr_iostream_t ios)
   ctx->ios = ios; 
   ctx->client_rsa = NULL;
   ctx->last_err = szkr_err_none;
+  ctx->state = state_inactive;
   
   return(1);
+}
+
+int szkr_reset_ctx(szkr_ctx_t* ctx)
+{
+  szkr_iostream_t ios = ctx->ios;
+  szkr_destroy_ctx(ctx);
+  return( szkr_new_ctx(ctx, ios) );
 }
 
 szkr_err_t szkr_last_error(szkr_ctx_t* ctx)
@@ -67,11 +78,82 @@ szkr_err_t szkr_last_error(szkr_ctx_t* ctx)
 
 int szkr_do_handshake(szkr_ctx_t* ctx)
 {
-  return(-1);
-}
-
-int szkr_redo_handshake(szkr_ctx_t* ctx)
-{
+  if (ctx->state != state_inactive) {
+    ctx->last_err = szkr_err_invalid_state;
+    goto failure;
+  }
+  
+  if (!ctx->client_rsa) {
+    if (rsa_keygen(ctx) != 0) {
+      ctx->last_err = szkr_err_internal;
+      goto failure;
+    }
+  }
+  union {
+    mgk_syn_t syn;
+    mgk_synack_t synack;
+    mgk_ack_t ack;
+    mgk_ackack_t ackack;
+  } pkts;
+  szkr_err_t ret;
+  
+  if (assemble_syn(ctx, &pkts.syn) != 0) {
+    ctx->last_err = szkr_err_internal;
+    goto failure;
+  }
+  
+  if (!write_packet(&ctx->ios, (byte*) &pkts.syn, sizeof(mgk_syn_t))) {
+    ctx->last_err = szkr_err_io;
+    goto failure;
+  }
+  
+  if (!read_packet(&ctx->ios, (byte*) &pkts.synack, sizeof(mgk_synack_t))) {
+    ctx->last_err = szkr_err_io;
+    goto failure;
+  }
+  
+  if ((ret = handle_synack(ctx, &pkts.synack)) != szkr_err_none) {
+    ctx->last_err = ret;
+    goto failure;
+  }
+  
+  if (assemble_ack(ctx, &pkts.ack) != 0) {
+    ctx->last_err = szkr_err_internal;
+    goto failure;
+  }
+  
+  if (!write_packet(&ctx->ios, (byte*) &pkts.ack, sizeof(mgk_ack_t))) {
+    ctx->last_err = szkr_err_io;
+    goto failure;
+  }
+  
+  if (!read_packet(&ctx->ios, (byte*) &pkts.ackack, sizeof(mgk_ackack_t))) {
+    ctx->last_err = szkr_err_io;
+    goto failure;
+  }
+  
+  if (!check_ackack(&pkts.ackack)) {
+    ctx->last_err = szkr_err_protocol;
+    goto failure;
+  }
+  
+  if (AES_set_encrypt_key(ctx->master_symmetric.data, MEGAKI_AES_KEYSIZE,
+                          &ctx->kenc) != 0) {
+    ctx->last_err = szkr_err_internal;
+    goto failure;
+  }
+  
+  if (AES_set_decrypt_key(ctx->master_symmetric.data, MEGAKI_AES_KEYSIZE,
+                          &ctx->kdec) != 0) {
+    ctx->last_err = szkr_err_internal;
+    goto failure;
+  }
+  
+  ctx->state = state_ready;
+  return( 0 );
+  
+failure:
+  ctx->state = state_error;
   return(-1);
 }
 
@@ -93,3 +175,24 @@ void szkr_destroy()
   EVP_cleanup();
   ERR_free_strings();
 }
+/** End Sazukari public API **/
+
+/** Sazukari internal functions definitions **/
+int read_packet(szkr_iostream_t* ios, byte* buffer, length_t packetlen)
+{
+  length_t read = 0;
+  slength_t this_read = 0;
+  while (read < packetlen &&
+         (this_read = ios->read_callback(buffer + read, packetlen - read, 
+                                         ios->cb_param) > 0))
+         
+    read += this_read;
+  
+  return (read == packetlen);
+}
+
+int write_packet(szkr_iostream_t* ios, byte* buffer, length_t packetlen)
+{
+  return (ios->write_callback(buffer, packetlen, ios->cb_param) == packetlen);
+}   
+/** End Sazukari internal functions definitions **/
