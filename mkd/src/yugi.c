@@ -404,7 +404,7 @@ void on_client_connect(uv_stream_t* server, int status)
   pthread_mutex_init(&conn->refmut, 0);
   if ((res = uv_timer_init(yc->uv_loop, &conn->timeout_tmr)) == -1) {
     YUGI_LOGF(LOG_WARNING, "Failed to init timer, dropping (%s)", uv_strerror(res));
-    goto dealloc_connection_node;
+    goto destroy_mutexes;
   }
   
   conn->timeout_tmr.data = conn;
@@ -444,6 +444,10 @@ void on_client_connect(uv_stream_t* server, int status)
   }
   
   return ;
+  
+destroy_mutexes:
+  sem_destroy(&conn->recvmut);
+  pthread_mutex_destroy(&conn->refmut);
   
 dealloc_connection_node:
   free(cnode);
@@ -530,7 +534,8 @@ void async_cb_freeconn(uv_async_t* handle)
   
   if (cnode->next)
     cnode->next->prev = cnode->prev;
-    
+  
+  sem_destroy(&c->recvmut);  
   free(cnode);
   free(c);
   YUGI_ASYNC_END_BOILERPLATE(handle);
