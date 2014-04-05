@@ -46,8 +46,8 @@ length_t    yami_get_tunnel_headlen();
 int         yami_get_packetlen(yami_ctx_t* ctx, byte* header,
                                length_t* o_len);
 void        yami_new_ctx(yami_ctx_t* ctx);
+/** Make sure that there is space for at least YAMI_MAX_PACKET_LENGTH in buffer **/
 yami_resp_t yami_incoming(yami_ctx_t* ctx, byte* buffer, length_t length);
-//void        yami_destroy_ctx(yami_ctx_t* ctx);
 void        yami_destroy();
 /** End Yami public interface **/
 

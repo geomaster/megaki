@@ -5,6 +5,19 @@
 #include <time.h>
 #endif
 
+/** Common defs for Megaki protocol **/
+#define MEGAKI_RSA_KEYSIZE                2048
+#define MEGAKI_RSA_EXPSIZE                32
+#define MEGAKI_MAGIC_BYTES                5
+#define MEGAKI_PACKET_TYPE_BYTES          1
+#define MEGAKI_AES_KEYSIZE                256
+#define MEGAKI_AES_BLOCK_BYTES            16
+#define MEGAKI_TOKEN_BYTES                16
+#define MEGAKI_ERROR_CODE_BYTES           MEGAKI_AES_KEYBYTES
+#define MEGAKI_HASH_BYTES                 32
+#define MEGAKI_VERSION_BYTES              2
+#define MEGAKI_LENGTH_BYTES               4
+
 typedef uint8_t byte;
 typedef uint32_t length_t;
 typedef int32_t slength_t;

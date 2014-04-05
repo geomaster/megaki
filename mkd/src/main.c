@@ -41,7 +41,7 @@ int main(int argc, char** argv)
     .log_file = stderr,
     .log_level = LOG_DEBUG2,
     .receive_timeout = 60000,
-    .buffer_length = 4096,
+    .buffer_length = 16384,
     .socket_backlog = 50,
     .watchdog_interval = 5000
   };
