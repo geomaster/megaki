@@ -60,10 +60,10 @@ typedef struct yami_ctx_t {
   
 #ifdef YAMI_DIAGNOSTIC
 #define YAMI_DIAGLOGS(s) \
-  fputs("[YAMI] " s "\n", stderr)
+  MEGAKI_LOGS(stderr, "YAMI", (s))
   
 #define YAMI_DIAGLOGF(f, ...) \
-  fprintf(stderr, "[YAMI] " f "\n", __VA_ARGS__)
+  MEGAKI_LOGF(stderr, "YAMI", f, __VA_ARGS__)
 #else
 #define YAMI_DIAGLOGS(s)
 #define YAMI_DIAGLOGF(f, ...)

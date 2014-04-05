@@ -16,12 +16,12 @@
 /** Log macros **/
 #define YUGI_LOGF(lvl, fmt, ...) \
   if (yc->config.log_level <= (lvl)) { \
-    fprintf(yc->config.log_file, "[YUGI] " fmt "\n", __VA_ARGS__); \
+    MEGAKI_LOGF(yc->config.log_file, "YUGI", fmt, __VA_ARGS__); \
   }
   
 #define YUGI_LOGS(lvl, str) \
   if (yc->config.log_level <= (lvl)) { \
-    fputs("[YUGI] " str "\n", yc->config.log_file); \
+    MEGAKI_LOGS(yc->config.log_file, "YUGI", str); \
   }
 /** End log macros **/
 
@@ -420,7 +420,6 @@ void on_client_connect(uv_stream_t* server, int status)
   conn->recvlen = 0;
   conn->sndlen = 0; 
   conn->expectlen = yc->yami_iniths_len;
-  //memcpy(conn->expectlen, yc->yami_iniths_len, YAMI_MAX_PACKET_VARIANCE);
   
   #ifdef YUGI_DEBUG
   dbg_generate_connection_id(conn->dbg_id);
@@ -632,23 +631,21 @@ void on_data_read(uv_stream_t* stream, ssize_t nread, const uv_buf_t* buf)
   
   pthread_mutex_lock(&c->recvmut);
   int newsize = c->recvlen + (int) nread;
-//  if (c->tunnelheadlen > 0) {
-    uv_timer_start(&c->timeout_tmr, &on_timeout_tick, yc->config.receive_timeout, 0);
-    
-    if (newsize >= c->tunnelheadlen) {
-      YUGI_LOGCONNS(c, "Asking Yami for expected length");
-      int res = yami_get_packetlen(YUGI_CYAMI(c), (byte*) buf->base, (length_t*) &c->expectlen);
-      
-      if (!res) {
-        YUGI_LOGCONNS(c, "Yami does not approve of the tunnel header, closing connection");
-        goto close_conn;
-      } else {
-        YUGI_LOGCONNF(c, "Yami expects %d bytes of additional data",
-                            c->expectlen - c->tunnelheadlen);
-      }
-    }
-//  }
+  uv_timer_start(&c->timeout_tmr, &on_timeout_tick, yc->config.receive_timeout, 0);
   
+  if (newsize >= c->tunnelheadlen) {
+    YUGI_LOGCONNS(c, "Asking Yami for expected length");
+    int res = yami_get_packetlen(YUGI_CYAMI(c), (byte*) buf->base, (length_t*) &c->expectlen);
+    
+    if (!res) {
+      YUGI_LOGCONNS(c, "Yami does not approve of the tunnel header, closing connection");
+      goto close_conn;
+    } else {
+      YUGI_LOGCONNF(c, "Yami expects %d bytes of additional data",
+                          c->expectlen - c->tunnelheadlen);
+    }
+  }
+
   if (newsize > c->expectlen) {
     YUGI_LOGCONNF(c, "expect:%d newsize:%d nread:%d\n", (int)c->expectlen, (int)newsize, (int)nread);
     YUGI_LOGCONNS(c, "Bombed by too much data; killing connection");
@@ -729,8 +726,6 @@ void job_handle_message(void* data)
   } else {
     if (resp.tunneling_header_length > 0) {
       c->schedexpectlen = resp.tunneling_header_length;
-      YUGI_LOGCONNF(c, "Started tunneling to Yami with message preamble of %d "
-                       "bytes", resp.tunneling_header_length);
       c->tunnelheadlen = resp.tunneling_header_length;
     }
   }
@@ -758,10 +753,6 @@ int close_connection(conn_t* c)
 void on_close_connection(uv_handle_t* h)
 {
   conn_t* c = (conn_t*) h->data;
-    #ifdef YUGI_DEBUG
-  yugi_t* yc = c->parent;
-  #endif
-  YUGI_LOGCONNS(c, "sdgdfg");
   c->is_closed = 1;
   free(h);
   release_connection(c);

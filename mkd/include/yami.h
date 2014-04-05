@@ -2,7 +2,6 @@
 #define __YAMI_H__
 #include "common.h"
 #define YAMI_MAX_PACKET_LENGTH            8400
-#define YAMI_MAX_PACKET_VARIANCE          2
 
 /** Is this a debug build? **/
 #ifdef DEBUG

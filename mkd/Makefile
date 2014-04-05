@@ -1,5 +1,5 @@
 CC=gcc
-CFLAGS=-O3 -DDEBUG -Iinclude -Wall -g
+CFLAGS=-DDEBUG -Iinclude -Wall -g
 LIBS=-L/usr/local/lib -pthread -lcrypto -luv
 
 OBJECTNAMES = \
