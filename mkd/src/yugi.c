@@ -5,6 +5,7 @@
 #include <malloc.h>
 #include <string.h>
 #include <stdlib.h>
+#include <semaphore.h>
 
 #define YUGI_VERSION_MAJOR              0
 #define YUGI_VERSION_MINOR              1
@@ -86,9 +87,8 @@ typedef struct conn_t {
                     sndbuf [ YUGI_MAX_MESSAGE_LENGTH ],
                     is_closed,
                     is_timed;
-  pthread_mutex_t   recvmut,
-                    sndmut,
-                    refmut;
+  pthread_mutex_t   refmut;
+  sem_t             recvmut;
   int               recvlen,
                     sndlen,
                     refcount,
@@ -400,8 +400,7 @@ void on_client_connect(uv_stream_t* server, int status)
   pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
   */
   
-  pthread_mutex_init(&conn->recvmut, 0);
-  pthread_mutex_init(&conn->sndmut, 0);
+  sem_init(&conn->recvmut, 0, 1);
   pthread_mutex_init(&conn->refmut, 0);
   if ((res = uv_timer_init(yc->uv_loop, &conn->timeout_tmr)) == -1) {
     YUGI_LOGF(LOG_WARNING, "Failed to init timer, dropping (%s)", uv_strerror(res));
@@ -629,7 +628,7 @@ void on_data_read(uv_stream_t* stream, ssize_t nread, const uv_buf_t* buf)
     goto close_conn;
   }
   
-  pthread_mutex_lock(&c->recvmut);
+  sem_wait(&c->recvmut);
   int newsize = c->recvlen + (int) nread;
   uv_timer_start(&c->timeout_tmr, &on_timeout_tick, yc->config.receive_timeout, 0);
   
@@ -677,11 +676,11 @@ void on_data_read(uv_stream_t* stream, ssize_t nread, const uv_buf_t* buf)
     }
   }
 
-  pthread_mutex_unlock(&c->recvmut);
+  sem_post(&c->recvmut);
   return ;
   
 unlock_mut:
-  pthread_mutex_unlock(&c->recvmut);
+  sem_post(&c->recvmut);
 
 close_conn:
   if (close_connection(c) != 0) {
@@ -705,9 +704,9 @@ void job_handle_message(void* data)
   yugi_t* yc = c->parent;
   
   length_t len = c->recvlen;
-  pthread_mutex_lock(&c->recvmut);
+  sem_wait(&c->recvmut);
   c->recvlen = 0;
-  pthread_mutex_unlock(&c->recvmut);
+  sem_post(&c->recvmut);
   
   yami_resp_t resp = yami_incoming(YUGI_CYAMI(c), c->recvbuf, len);
   c->sndlen = resp.data_size;
