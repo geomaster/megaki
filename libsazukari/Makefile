@@ -1,5 +1,5 @@
 CC=gcc
-CFLAGS=-DDEBUG -Iinclude -fPIC -Wall -g
+CFLAGS=-DDEBUG -Iinclude -shared -fPIC -Wall -g
 LIBS=-lcrypto 
 
 OBJECTNAMES = \

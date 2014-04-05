@@ -6,18 +6,19 @@
 /** Sazukari public declarations **/
 typedef struct szkr_ctx_t szkr_ctx_t;
 
-enum szkr_err_t {
+typedef enum szkr_err_t {
   szkr_err_none,
   szkr_err_unknown,
   szkr_err_incompatible_versions,
   szkr_err_service_unavailable,
   skzr_err_invalid_state,
   szkr_err_protocol,
+  szkr_err_rehandshake_needed,
   szkr_err_server_blacklisted
-};
+} szkr_err_t;
 
-typedef (slength_t)(* szkr_read_cb)(byte*, length_t, void*);
-typedef (slength_t)(* szkr_write_cb)(byte*, length_t, void*);
+typedef slength_t (* szkr_read_cb)(byte*, length_t, void*);
+typedef slength_t (* szkr_write_cb)(byte*, length_t, void*);
 
 typedef struct szkr_iostream_t {
   szkr_read_cb read_callback;
@@ -29,6 +30,7 @@ typedef struct szkr_iostream_t {
 
 /** Sazukari public API **/
 int        szkr_init();
+int        szkr_get_ctxsize();
 int        szkr_new_ctx(szkr_ctx_t* ctx, szkr_iostream_t ios);
 int        szkr_do_handshake(szkr_ctx_t* ctx);
 int        szkr_redo_handshake(szkr_ctx_t* ctx);
@@ -36,7 +38,7 @@ szkr_err_t szkr_last_error(szkr_ctx_t* ctx);
 int        szkr_send_message(szkr_ctx_t*, const byte* msg, length_t msglen, 
                              byte* responsebuf, length_t* responselen);
 void       szkr_destroy_ctx(szkr_ctx_t* ctx);
-int        szkr_destroy();
+void       szkr_destroy();
 /** End Sazukari public API **/
 
 #endif // __SAZUKARI_H__
