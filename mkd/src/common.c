@@ -32,14 +32,6 @@ const byte MEGAKI_SERVICE_UNAVAILABLE_ERROR[] =
     
 int mgk_memeql(const byte* a, const byte* b, length_t count)
 {
-/* vulnerable to a timing attack:
-
-  int eql = 1;
-  unsigned int i;
-  for (i = 0; i < count; ++i)
-    if (a[i] != b[i]) eql = 0;
-  return(eql); */
-
   int result = 0;
   unsigned int i;
   for (i = 0; i < count; ++i)
