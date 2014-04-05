@@ -676,7 +676,6 @@ void on_data_read(uv_stream_t* stream, ssize_t nread, const uv_buf_t* buf)
     }
   }
 
-  sem_post(&c->recvmut);
   return ;
   
 unlock_mut:
@@ -704,7 +703,6 @@ void job_handle_message(void* data)
   yugi_t* yc = c->parent;
   
   length_t len = c->recvlen;
-  sem_wait(&c->recvmut);
   c->recvlen = 0;
   sem_post(&c->recvmut);
   
