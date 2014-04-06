@@ -22,11 +22,28 @@ HEADERNAMES = \
               megaki.h \
               sslc.h
 
+COMMONHEADERS = \
+              common.h \
+              megaki.h
+              
+COMMONSRC = \
+              common.c
+          
+COMMONHEADERSPREF = $(addprefix ../common/include/,$(COMMONHEADERS))
+
+COMMONSRCPREF = $(addprefix ../common/src/,$(COMMONSRC))
+
 OBJ=$(patsubst %,obj/%,$(OBJECTNAMES))
 HEADERS=$(patsubst %,include/%,$(HEADERNAMES))
 
 default: bin/mkd
 
+$(addprefix include/,$(COMMONHEADERS)): $(COMMONHEADERSPREF)
+	cp $(COMMONHEADERSPREF) include/
+
+$(addprefix src/,$(COMMONSRC)): $(COMMONSRCPREF)
+	cp $(COMMONSRCPREF) src/
+	
 bin/mkd: $(OBJ)         
 	gcc -o $@ $^ $(CFLAGS) $(LIBS)
 	
@@ -37,4 +54,5 @@ obj/%.o: src/%.c $(HEADERS)
 
 clean:
 	rm -f obj/*.o bin/mkd
-
+	cd include && rm -f $(COMMONHEADERS)
+	cd src && rm -f $(COMMONSRC)
