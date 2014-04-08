@@ -27,7 +27,7 @@
   (MEGAKI_AES_BLOCK_BYTES * ((YAMI_MAX_PACKET_LENGTH - \
   sizeof(mgk_msghdr_t)) / MEGAKI_AES_BLOCK_BYTES))
   
-#define YAMI_DIAGNOSTIC
+//#define YAMI_DIAGNOSTIC
 
 /** Internal structures for MKD Yami **/
 typedef struct yami_ctx_t {

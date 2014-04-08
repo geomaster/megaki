@@ -39,7 +39,7 @@ int main(int argc, char** argv)
     .thread_count = 2,
     .queue_size = 2000,
     .log_file = stderr,
-    .log_level = LOG_DEBUG2,
+    .log_level = LOG_NOTICE,
     .receive_timeout = 60000,
     .buffer_length = 16384,
     .socket_backlog = 50,
