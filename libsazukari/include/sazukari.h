@@ -24,7 +24,6 @@ typedef enum szkr_err_t {
   szkr_err_server_blacklisted
 } szkr_err_t;
 
-typedef slength_t (* szkr_read_cb)(byte*, length_t, void*);
 typedef slength_t (* szkr_write_cb)(byte*, length_t, void*);
 
 typedef struct szkr_iostream_t {

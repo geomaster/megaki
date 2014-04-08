@@ -1,4 +1,4 @@
-#include "common.h"
+#include <common.h>
 #include "megaki.h"
 #include <string.h>
 
@@ -21,6 +21,7 @@ const byte MEGAKI_INCOMPATIBLE_VERSIONS_ERROR[] =
     0x00, 0x00, 0x00, 0x00 };
     
 const byte MEGAKI_SERVICE_UNAVAILABLE_ERROR[] = 
+
   { 0x02, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00,
