@@ -1,10 +1,15 @@
 CC=gcc
 CFLAGS=-DDEBUG -Iinclude -shared -fPIC -Wall -g
+TESTCFLAGS=-DTEST -DDEBUG -Iinclude -Lbin -Wall -g
 LIBS=-lcrypto 
+TESTLIBS=-lcrypto -lsazukari
 
 OBJECTNAMES = \
               sazukari.o \
               common.o
+
+TESTOBJNAMES = \
+						  playground.o
 
 HEADERNAMES = \
               sazukari.h \
@@ -19,13 +24,13 @@ COMMONSRC = \
               common.c
           
 COMMONHEADERSPREF = $(addprefix ../common/include/,$(COMMONHEADERS))
-
 COMMONSRCPREF = $(addprefix ../common/src/,$(COMMONSRC))
 
+TESTEXECS=$(patsubst %.o,tests/%,$(TESTOBJNAMES))
 OBJ=$(patsubst %,obj/%,$(OBJECTNAMES))
 HEADERS=$(patsubst %,include/%,$(HEADERNAMES))
 
-default: bin/libsazukari.so
+default: sazukari tests
 
 $(addprefix include/,$(COMMONHEADERS)): $(COMMONHEADERSPREF)
 	cp $(COMMONHEADERSPREF) include/
@@ -33,9 +38,16 @@ $(addprefix include/,$(COMMONHEADERS)): $(COMMONHEADERSPREF)
 $(addprefix src/,$(COMMONSRC)): $(COMMONSRCPREF)
 	cp $(COMMONSRCPREF) src/
 	
+sazukari: bin/libsazukari.so
+
+tests: $(TESTEXECS)
+
 bin/libsazukari.so: $(OBJ)         
 	gcc -o $@ $^ $(CFLAGS) $(LIBS)
-	
+
+tests/%: tests/%.c
+	$(CC) -o $@ $< $(TESTCFLAGS) $(TESTLIBS)
+
 obj/%.o: src/%.c $(HEADERS)
 	$(CC) -c -o $@ $< $(CFLAGS)
 	
