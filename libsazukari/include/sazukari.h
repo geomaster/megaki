@@ -26,6 +26,8 @@ typedef enum szkr_err_t {
 
 typedef slength_t (* szkr_write_cb)(byte*, length_t, void*);
 
+typedef slength_t (* szkr_read_cb)(byte*, length_t, void*);
+
 typedef struct szkr_iostream_t {
   szkr_read_cb read_callback;
   szkr_write_cb write_callback;

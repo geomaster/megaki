@@ -8,6 +8,17 @@
 #include <openssl/rand.h>
 #include <openssl/aes.h>
 #include <openssl/hmac.h>
+#include <assert.h>
+
+#ifdef DEBUG
+#define SAZUKARI_ASSERT(cond, s) \
+  assert((cond) && (s))
+#else
+#define SAZUKARI_ASSERT(cond, s)
+#endif
+
+#undef min
+#define min(a, b) ((a) < (b) ? (a) : (b))
 
 /** Definitions of Sazukari objects **/
 typedef struct szkr_ctx_t {
@@ -166,7 +177,9 @@ int szkr_send_messge(szkr_ctx_t* ctx, const byte* msg, length_t msglen,
 {
   return(-1);
 }
-
+// Note to further self: please find all references to 'int' and 'slength_t' in
+// this source code and see if they pose a security risk! I know what I'm saying.
+// ( TODO )
 void szkr_destroy_ctx(szkr_ctx_t* ctx)
 {
   if (ctx->client_rsa)
@@ -240,5 +253,52 @@ destroy_srvrsa:
   
 failure:
   return(-1);
+}
+
+int assemble_syn(szkr_ctx_t* ctx, mgk_syn_t* osyn)
+{
+  mgk_fill_magic(&osyn->header);
+  osyn->header.type = magic_syn;
+  
+  mgk_syn_plain_t synplain;
+  SAZUKARI_ASSERT(BN_num_bytes(ctx->client_rsa->n) <= MEGAKI_RSA_KEYBYTES,
+      "Not enough bytes to store the client RSA (n)");
+  SAZUKARI_ASSERT(BN_num_bytes(ctx->client_rsa->e) <= MEGAKI_RSA_EXPBYTES,
+      "Not enough bytes to store the client RSA (e)");
+
+  if (BN_bn2bin(ctx->client_rsa->n, synplain.client_key.modulus + 
+        (MEGAKI_RSA_KEYBYTES - BN_num_bytes(ctx->client_rsa->n))) <= 0) {
+    goto failure;
+  }
+
+  if (BN_bn2bin(ctx->client_rsa->e, synplain.client_key.exponent +
+        (MEGAKI_RSA_EXPBYTES - BN_num_bytes(ctx->client_rsa->e))) <= 0) {
+    goto failure;
+  }
+
+  SHA256((unsigned char*) &synplain, sizeof(mgk_syn_plain_t), osyn->hash.data);
+  byte* synplainb = (byte*) &synplain;
+
+  int i, j;
+  for (i = 1; i < MEGAKI_RSA_BLOCKCOUNT(sizeof(mgk_syn_plain_t)); ++i)
+    for (j = 0; j < MEGAKI_RSA_BLOCK_BYTES; ++j)
+      synplainb[i * MEGAKI_RSA_BLOCK_BYTES + j] ^=
+        synplainb[(i - 1) * MEGAKI_RSA_BLOCK_BYTES + j];
+
+  for (i = 0; i < MEGAKI_RSA_BLOCKCOUNT(sizeof(mgk_syn_plain_t)); ++i)
+    if (RSA_public_encrypt(
+          min(sizeof(mgk_syn_plain_t) - i * MEGAKI_RSA_BLOCK_BYTES, 
+            MEGAKI_RSA_BLOCK_BYTES),
+          synplainb + i * MEGAKI_RSA_BLOCK_BYTES,
+          (unsigned char*) &osyn->ciphertext[i].data,
+          ctx->server_rsa,
+          RSA_PKCS1_OAEP_PADDING) == -1) {
+      goto failure;
+  }
+
+  return( 0 );
+
+failure:
+  return( -1 );
 }
 /** End Sazukari internal functions definitions **/

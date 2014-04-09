@@ -10,3 +10,5 @@ mkd/bin/*
 libsazukari/bin/*
 legacy/megaki/bin/*
 
+# ignore vim swapfiles
+*.swp
