@@ -45,7 +45,7 @@ tests: bin/libsazukari.so $(TESTEXECS)
 bin/libsazukari.so: $(OBJ)         
 	gcc -o $@ $^ $(CFLAGS) $(LIBS)
 
-tests/%: tests/%.c
+tests/%: tests/%.c bin/libsazukari.so
 	$(CC) -o $@ $< $(TESTCFLAGS) $(TESTLIBS)
 
 obj/%.o: src/%.c $(HEADERS)
