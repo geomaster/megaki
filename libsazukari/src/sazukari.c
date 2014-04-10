@@ -113,18 +113,15 @@ int szkr_do_handshake(szkr_ctx_t* ctx)
   szkr_err_t ret;
   
   if (assemble_syn(ctx, &pkts.syn) != 0) {
-    ctx->last_err = szkr_err_internal;
-    goto failure;
+    goto internal_err;
   }
   
   if (!write_packet(&ctx->ios, (byte*) &pkts.syn, sizeof(mgk_syn_t))) {
-    ctx->last_err = szkr_err_io;
-    goto failure;
+    goto io_err;
   }
   
   if (!read_packet(&ctx->ios, (byte*) &pkts.synack, sizeof(mgk_synack_t))) {
-    ctx->last_err = szkr_err_io;
-    goto failure;
+    goto io_err;
   }
   
   if ((ret = handle_synack(ctx, &pkts.synack)) != szkr_err_none) {
@@ -133,40 +130,46 @@ int szkr_do_handshake(szkr_ctx_t* ctx)
   }
   
   if (assemble_ack(ctx, &pkts.ack) != 0) {
-    ctx->last_err = szkr_err_internal;
-    goto failure;
+    goto internal_err;
   }
   
   if (!write_packet(&ctx->ios, (byte*) &pkts.ack, sizeof(mgk_ack_t))) {
-    ctx->last_err = szkr_err_io;
-    goto failure;
+    goto io_err;
   }
   
   if (!read_packet(&ctx->ios, (byte*) &pkts.ackack, sizeof(mgk_ackack_t))) {
-    ctx->last_err = szkr_err_io;
-    goto failure;
+    goto io_err;
   }
   
   if (!check_ackack(&pkts.ackack)) {
-    ctx->last_err = szkr_err_protocol;
-    goto failure;
+    goto proto_err;
   }
   
   if (AES_set_encrypt_key(ctx->master_symmetric.data, MEGAKI_AES_KEYSIZE,
                           &ctx->kenc) != 0) {
-    ctx->last_err = szkr_err_internal;
-    goto failure;
+    goto internal_err;
   }
   
   if (AES_set_decrypt_key(ctx->master_symmetric.data, MEGAKI_AES_KEYSIZE,
                           &ctx->kdec) != 0) {
-    ctx->last_err = szkr_err_internal;
-    goto failure;
+    goto internal_err;
   }
   
   ctx->state = state_ready;
   return( 0 );
-  
+
+io_err:
+  ctx->last_err = szkr_err_io;
+  goto failure;
+
+internal_err:
+  ctx->last_err = szkr_err_internal;
+  goto failure;
+
+proto_err:
+  ctx->last_err = szkr_err_protocol;
+  goto failure;
+
 failure:
   ctx->state = state_error;
   return(-1);
