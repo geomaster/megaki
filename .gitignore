@@ -15,3 +15,6 @@ libsazukari/tests/*
 
 # ignore vim swapfiles
 *.swp
+
+# ignore my vim settings
+*.vim
