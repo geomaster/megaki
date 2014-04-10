@@ -2,7 +2,7 @@
 #include "megaki.h"
 #include <string.h>
 
-const byte MEGAKI_MAGIC[] = { 'M', 'G', 'K', 0xEA, 0xCA };
+const byte MEGAKI_MAGIC[] = { 'M', 'G', 'K', 0xAA, 0xCA };
 
 const byte MEGAKI_VERSION[] = { 0x0A, 0xFF };
 
