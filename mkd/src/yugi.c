@@ -86,7 +86,8 @@ typedef struct conn_t {
   byte              recvbuf[ YUGI_MAX_MESSAGE_LENGTH ],
                     sndbuf [ YUGI_MAX_MESSAGE_LENGTH ],
                     is_closed,
-                    is_timed;
+                    is_timed,
+                    kill_after_write;
   pthread_mutex_t   refmut;
   sem_t             recvmut;
   int               recvlen,
@@ -337,7 +338,10 @@ void async_cb_closeconn(uv_async_t* handle)
 }
 
 void kill_timeout_timer(conn_t* c)
-{
+{printf("i'm killing you softly (%p)\n", &c->timeout_tmr);
+  int res = uv_timer_stop(&c->timeout_tmr);
+  c->is_timed = 0;
+  printf("res:%d\n", res);
   uv_close((uv_handle_t*) &c->timeout_tmr, NULL);
 }
 
@@ -413,6 +417,7 @@ void on_client_connect(uv_stream_t* server, int status)
   conn->parent = yc;
   conn->refcount = 1;
   conn->stream =  (uv_stream_t*) client;
+  conn->kill_after_write = 0;
   conn->is_closed = 0;
   conn->is_timed = 1;
   conn->tunnelheadlen = yc->yami_iniths_len;
@@ -482,9 +487,16 @@ void on_data_written(uv_write_t* req, int status)
   if (status != 0) {
     YUGI_LOGCONNF(c, "Could not write data to stream (%s)", uv_strerror(status));
   }
+
+  YUGI_LOGCONNF(c, "Written %d bytes to stream", c->sndlen);
+
   c->expectlen = c->schedexpectlen;
-  c->is_timed = 1;
-  uv_timer_start(&c->timeout_tmr, &on_timeout_tick, yc->config.receive_timeout, 0);
+  if (!c->kill_after_write) {
+    c->is_timed = 1;
+    uv_timer_start(&c->timeout_tmr, &on_timeout_tick, yc->config.receive_timeout, 0);
+  } else {
+    close_connection(c);
+  }
   release_connection(c);
   free(req);
 }
@@ -716,10 +728,9 @@ void job_handle_message(void* data)
   
   if (resp.data_size > 0) {
     YUGI_LOGCONNF(c, "Sending %d bytes of data from Yami", resp.data_size);
+    c->kill_after_write = resp.end_connection;
     grab_spawn_async(yc, c, c, async_cb_write_data);
-  }
-  
-  if (resp.end_connection) {
+  } else if (resp.end_connection) {
     if (!c->is_closed) {
       YUGI_LOGCONNS(c, "Closing connection as requested by Yami");
 
@@ -741,14 +752,16 @@ int close_connection(conn_t* c)
   #ifdef YUGI_DEBUG
   yugi_t* yc = c->parent;
   #endif
-  
-  if (c->is_closed)
-    return(0); /* already done */
-    
+ 
   YUGI_LOGCONNS(c, "Closing connection");
   kill_timeout_timer(c);
-  uv_close((uv_handle_t*) c->stream, &on_close_connection);
-  
+
+  if (c->is_closed)
+    return(0); /* already done */
+  else {
+    c->is_closed = 1;
+    uv_close((uv_handle_t*) c->stream, &on_close_connection);
+  } 
   return(res);
 }
 
@@ -822,6 +835,7 @@ void on_timeout_tick(uv_timer_t* tmr)
   #endif
   
   YUGI_LOGCONNS(c, "Timeout timer tick");
+  printf("it's me darlin (%p)\n", tmr);
   if (!c->is_closed && c->is_timed) {
     #ifdef YUGI_DEBUG
     YUGI_LOGCONNS(c, "Connection timed out, closing");
@@ -829,7 +843,8 @@ void on_timeout_tick(uv_timer_t* tmr)
 
     close_connection(c);
   }
-  else uv_close((uv_handle_t*) tmr, NULL);
+  else if (!c->is_timed)
+    uv_close((uv_handle_t*) tmr, NULL);
 }
 #ifdef YUGI_DEBUG
 void dbg_generate_connection_id(char* out_id)

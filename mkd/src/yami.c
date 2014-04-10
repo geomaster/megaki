@@ -23,47 +23,50 @@
 #define YAMI_MAXTOKS                    10000
 #define YAMI_MAXBUCKS                   20000
 
+#undef min
+#define min(a, b) ((a) < (b) ? (a) : (b))
+
 #define YAMI_MAX_MESSAGE_LENGTH         \
-  (MEGAKI_AES_BLOCK_BYTES * ((YAMI_MAX_PACKET_LENGTH - \
-  sizeof(mgk_msghdr_t)) / MEGAKI_AES_BLOCK_BYTES))
-  
-//#define YAMI_DIAGNOSTIC
-
-/** Internal structures for MKD Yami **/
-typedef struct yami_ctx_t {
-  enum megaki_state {
-    MGS_WAITING_SYN,
-    MGS_RECEIVED_SYN,
-    MGS_WAITING_ACK,
-    MGS_TUNNEL_READY
-  } state;
-  
-  union {
-    struct {
-      tokentry* token;
-      mgk_aes_key_t server_symm;
-    } synacks;
+    (MEGAKI_AES_BLOCK_BYTES * ((YAMI_MAX_PACKET_LENGTH - \
+    sizeof(mgk_msghdr_t)) / MEGAKI_AES_BLOCK_BYTES))
     
-    struct {
-      tokentry* token;
-      AES_KEY kenc, kdec;
-    } ackr;
-  } x;
-} yami_ctx_t;
-/** End internal structures for MKD Yami **/
+  #define YAMI_DIAGNOSTIC
 
-/** Debug macros **/
+  /** Internal structures for MKD Yami **/
+  typedef struct yami_ctx_t {
+    enum megaki_state {
+      MGS_WAITING_SYN,
+      MGS_RECEIVED_SYN,
+      MGS_WAITING_ACK,
+      MGS_TUNNEL_READY
+    } state;
+    
+    union {
+      struct {
+        tokentry* token;
+        mgk_aes_key_t server_symm;
+      } synacks;
+      
+      struct {
+        tokentry* token;
+        AES_KEY kenc, kdec;
+      } ackr;
+    } x;
+  } yami_ctx_t;
+  /** End internal structures for MKD Yami **/
+
+  /** Debug macros **/
 #ifdef YAMI_DEBUG
 #include <assert.h>
 #define YAMI_ASSERT(cond, msg) \
-  assert((cond) && msg)
-  
+    assert((cond) && msg)
+    
 #ifdef YAMI_DIAGNOSTIC
 #define YAMI_DIAGLOGS(s) \
-  MEGAKI_LOGS(stderr, "YAMI", (s))
-  
+    MEGAKI_LOGS(stderr, "YAMI", (s))
+    
 #define YAMI_DIAGLOGF(f, ...) \
-  MEGAKI_LOGF(stderr, "YAMI", f, __VA_ARGS__)
+    MEGAKI_LOGF(stderr, "YAMI", f, __VA_ARGS__)
 #else
 #define YAMI_DIAGLOGS(s)
 #define YAMI_DIAGLOGF(f, ...)
@@ -74,61 +77,61 @@ typedef struct yami_ctx_t {
 #define YAMI_DIAGLOGS(s)
 #define YAMI_DIAGLOGF(f, ...)
 #endif
-/** End debug macros **/
+  /** End debug macros **/
 
-/** Global variables **/
-BN_CTX* yami__scbn;
-RSA* yami__servercert;
-char yami__version[100];
-/** End global variables **/
+  /** Global variables **/
+  BN_CTX* yami__scbn;
+  RSA* yami__servercert;
+  char yami__version[100];
+  /** End global variables **/
 
-/** Prototypes for internal procedures **/
-void handle_syn(yami_ctx_t* ctx, yami_resp_t* resp, byte* buf);
-void handle_synack(yami_ctx_t* ctx, yami_resp_t* resp, byte* buf);
-void handle_ack(yami_ctx_t* ctx, yami_resp_t* resp, byte* buf);
-int  assemble_synack(yami_ctx_t* ctx, RSA* clrsa, mgk_synack_t* res, const byte* err);
-void handle_msg(yami_ctx_t* ctx, yami_resp_t* resp, byte* buf);
-/** End prototypes for internal procedures **/
+  /** Prototypes for internal procedures **/
+  void handle_syn(yami_ctx_t* ctx, yami_resp_t* resp, byte* buf);
+  void handle_synack(yami_ctx_t* ctx, yami_resp_t* resp, byte* buf);
+  void handle_ack(yami_ctx_t* ctx, yami_resp_t* resp, byte* buf);
+  int  assemble_synack(yami_ctx_t* ctx, RSA* clrsa, mgk_synack_t* res, const byte* err);
+  void handle_msg(yami_ctx_t* ctx, yami_resp_t* resp, byte* buf);
+  /** End prototypes for internal procedures **/
 
-/** Yami public interface **/
-void yami_version(int* major, int* minor, int* revision, char** suffix)
-{
-  *major = YAMI_VERSION_MAJOR;
-  *minor = YAMI_VERSION_MINOR;
-  *revision = YAMI_VERSION_REVISION;
-  *suffix = YAMI_VERSION_SUFFIX;
-}
+  /** Yami public interface **/
+  void yami_version(int* major, int* minor, int* revision, char** suffix)
+  {
+    *major = YAMI_VERSION_MAJOR;
+    *minor = YAMI_VERSION_MINOR;
+    *revision = YAMI_VERSION_REVISION;
+    *suffix = YAMI_VERSION_SUFFIX;
+  }
 
-const char* yami_strversion()
-{
-  int maj, min, rev;
-  char* suff;
-  yami_version(&maj, &min, &rev, &suff);
-  snprintf(yami__version, 99, "%d.%d.%d%s", maj, min, rev, suff);
-  return yami__version;  
-}
+  const char* yami_strversion()
+  {
+    int maj, min, rev;
+    char* suff;
+    yami_version(&maj, &min, &rev, &suff);
+    snprintf(yami__version, 99, "%d.%d.%d%s", maj, min, rev, suff);
+    return yami__version;  
+  }
 
-int yami_getcontextsize() 
-{
-  return( sizeof(yami_ctx_t) );
-}
+  int yami_getcontextsize() 
+  {
+    return( sizeof(yami_ctx_t) );
+  }
 
-int yami_init(yami_conf_t* config)
-{
-  ERR_load_crypto_strings();
-  OpenSSL_add_all_ciphers();
-  ssl_thread_setup();
-  
-  BIO* bio = BIO_new_mem_buf(config->certificate_buffer,
-                             config->certificate_size);
-  if (!bio)
-    goto cleanup_ossl;
-  
-  PEM_read_bio_RSAPrivateKey(bio, &yami__servercert, NULL,
-                             (void*)config->certificate_passphrase);
-  if (!yami__servercert)
-    goto cleanup_bio;
-  
+  int yami_init(yami_conf_t* config)
+  {
+    ERR_load_crypto_strings();
+    OpenSSL_add_all_ciphers();
+    ssl_thread_setup();
+    
+    BIO* bio = BIO_new_mem_buf(config->certificate_buffer,
+                               config->certificate_size);
+    if (!bio)
+      goto cleanup_ossl;
+    
+    PEM_read_bio_RSAPrivateKey(bio, &yami__servercert, NULL,
+                               (void*)config->certificate_passphrase);
+    if (!yami__servercert)
+      goto cleanup_bio;
+    
   if (BN_num_bytes(yami__servercert->n) < MEGAKI_RSA_KEYBYTES)
     goto cleanup_rsa;
 
@@ -281,27 +284,37 @@ void handle_syn(yami_ctx_t* ctx, yami_resp_t* resp, byte* buffer)
   resp->end_connection = 0;
   const mgk_syn_t* syn = (mgk_syn_t*) buffer;
   byte plainb[ MEGAKI_RSA_ENCSIZE(sizeof(mgk_syn_plain_t)) ];
+
   mgk_hash_t my_hash;
   const mgk_syn_plain_t *plain = (mgk_syn_plain_t*) plainb; 
   
   YAMI_DIAGLOGS("Handling SYN");
   
-  int i, j;
+  int i, j, res, total = 0;
   for (i = 0; i < MEGAKI_RSA_BLOCKCOUNT(sizeof(mgk_syn_plain_t)); ++i)
-    if (RSA_private_decrypt(sizeof(mgk_rsa_block_t),
+    if ((res = RSA_private_decrypt(sizeof(mgk_rsa_block_t),
                             (unsigned char*) &syn->ciphertext[i].data, 
                             plainb + i * MEGAKI_RSA_BLOCK_BYTES,
                             yami__servercert,
-                            RSA_PKCS1_OAEP_PADDING) < 0) {
+                            RSA_PKCS1_OAEP_PADDING)) < 0) {
       YAMI_DIAGLOGF("Could not decrypt block %d of SYN data", i);
       goto kill_connection;
-    }
+    } else total += res; 
   
-  for (i = 1; i < MEGAKI_RSA_BLOCKCOUNT(sizeof(mgk_syn_plain_t)); ++i)
-    for (j = 0; j < MEGAKI_RSA_BLOCK_BYTES; ++j)
+  if (total != sizeof(mgk_syn_plain_t)) {
+    YAMI_DIAGLOGS("Decrypted plaintext size erroneous");
+    goto kill_connection;
+  }
+
+  for (i = 1; i < MEGAKI_RSA_BLOCKCOUNT(sizeof(mgk_syn_plain_t)); ++i) {
+    int ct = min(MEGAKI_RSA_BLOCK_BYTES, sizeof(mgk_syn_plain_t) - i *
+        MEGAKI_RSA_BLOCK_BYTES);
+
+    for (j = 0; j < ct; ++j)
       plainb[i * MEGAKI_RSA_BLOCK_BYTES + j] ^=
         plainb[(i - 1) * MEGAKI_RSA_BLOCK_BYTES + j];
-  
+  }
+
   SHA256((unsigned char*) plain, sizeof(mgk_syn_plain_t), (unsigned char*) &my_hash.data);
   if (!mgk_memeql(my_hash.data, syn->hash.data, MEGAKI_HASH_BYTES)) {
     YAMI_DIAGLOGS("Invalid hash");
