@@ -725,7 +725,7 @@ void job_handle_message(void* data)
   yami_resp_t resp = yami_incoming(YUGI_CYAMI(c), c->recvbuf, len);
   c->sndlen = resp.data_size;
   
-  if (resp.data_size > 0) {
+  if (!c->is_closed && resp.data_size > 0) {
     YUGI_LOGCONNF(c, "Sending %d bytes of data from Yami", resp.data_size);
     c->kill_after_write = resp.end_connection;
     grab_spawn_async(yc, c, c, async_cb_write_data);
