@@ -175,7 +175,7 @@ failure:
   return(-1);
 }
 
-int szkr_send_messge(szkr_ctx_t* ctx, const byte* msg, length_t msglen,
+int szkr_send_message(szkr_ctx_t* ctx, const byte* msg, length_t msglen,
                      byte* responsebuf, length_t* responselen)
 {
   return(-1);
