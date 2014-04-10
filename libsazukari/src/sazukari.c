@@ -276,6 +276,7 @@ int assemble_syn(szkr_ctx_t* ctx, mgk_syn_t* osyn)
     goto failure;
   }
 
+  memcpy(synplain.version, MEGAKI_VERSION, MEGAKI_VERSION_BYTES);
   SHA256((unsigned char*) &synplain, sizeof(mgk_syn_plain_t), osyn->hash.data);
   byte* synplainb = (byte*) &synplain;
 
