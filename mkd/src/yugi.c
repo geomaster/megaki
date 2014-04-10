@@ -338,10 +338,9 @@ void async_cb_closeconn(uv_async_t* handle)
 }
 
 void kill_timeout_timer(conn_t* c)
-{printf("i'm killing you softly (%p)\n", &c->timeout_tmr);
+{
   int res = uv_timer_stop(&c->timeout_tmr);
   c->is_timed = 0;
-  printf("res:%d\n", res);
   uv_close((uv_handle_t*) &c->timeout_tmr, NULL);
 }
 
@@ -835,7 +834,6 @@ void on_timeout_tick(uv_timer_t* tmr)
   #endif
   
   YUGI_LOGCONNS(c, "Timeout timer tick");
-  printf("it's me darlin (%p)\n", tmr);
   if (!c->is_closed && c->is_timed) {
     #ifdef YUGI_DEBUG
     YUGI_LOGCONNS(c, "Connection timed out, closing");
