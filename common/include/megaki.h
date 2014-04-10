@@ -16,7 +16,7 @@
   (((B) + MEGAKI_RSA_BLOCK_BYTES - 1) / (MEGAKI_RSA_BLOCK_BYTES))
   
 #define MEGAKI_RSA_ENCSIZE(B)             \
-  ((MEGAKI_RSA_BLOCK_BYTES) * MEGAKI_RSA_BLOCKCOUNT(B))
+  ((MEGAKI_RSA_KEYBYTES) * MEGAKI_RSA_BLOCKCOUNT(B))
   
 #define pk __attribute__((__packed__))
 
