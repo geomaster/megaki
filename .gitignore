@@ -9,6 +9,8 @@
 mkd/bin/*
 libsazukari/bin/*
 legacy/megaki/bin/*
+libsazukari/tests/*
+!libsazukari/tests/*.c
 
 # ignore vim swapfiles
 *.swp
