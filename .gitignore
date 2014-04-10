@@ -1,8 +1,9 @@
 # ignore backup files
 *~
 
-# ignore private certificates
+# ignore private and public certificates
 *.pem
+*.pub
 
 # ignore binary files
 *.o
