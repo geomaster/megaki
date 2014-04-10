@@ -40,7 +40,7 @@ $(addprefix src/,$(COMMONSRC)): $(COMMONSRCPREF)
 	
 sazukari: bin/libsazukari.so
 
-tests: $(TESTEXECS)
+tests: bin/libsazukari.so $(TESTEXECS)
 
 bin/libsazukari.so: $(OBJ)         
 	gcc -o $@ $^ $(CFLAGS) $(LIBS)
