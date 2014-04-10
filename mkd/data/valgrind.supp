@@ -1,0 +1,21 @@
+{
+  supp1
+  Memcheck:Cond
+  ...
+  obj:/usr/lib/libcrypto.so.1.0.0
+
+}
+
+{
+  supp2
+  Memcheck:Value8
+  ...
+  obj:/usr/lib/libcrypto.so.1.0.0
+}
+
+{
+  supp3
+  Memcheck:Free
+  ...
+  obj:/usr/lib/libcrypto.so.1.0.0
+}
