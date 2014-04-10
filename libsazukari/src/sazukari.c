@@ -280,10 +280,14 @@ int assemble_syn(szkr_ctx_t* ctx, mgk_syn_t* osyn)
   byte* synplainb = (byte*) &synplain;
 
   int i, j;
-  for (i = 1; i < MEGAKI_RSA_BLOCKCOUNT(sizeof(mgk_syn_plain_t)); ++i)
-    for (j = 0; j < MEGAKI_RSA_BLOCK_BYTES; ++j)
+  for (i = 1; i < MEGAKI_RSA_BLOCKCOUNT(sizeof(mgk_syn_plain_t)); ++i) {
+    int ct = min(MEGAKI_RSA_BLOCK_BYTES, sizeof(mgk_syn_plain_t) - i *
+        MEGAKI_RSA_BLOCK_BYTES);
+
+    for (j = 0; j < ct; ++j)
       synplainb[i * MEGAKI_RSA_BLOCK_BYTES + j] ^=
         synplainb[(i - 1) * MEGAKI_RSA_BLOCK_BYTES + j];
+  }
 
   for (i = 0; i < MEGAKI_RSA_BLOCKCOUNT(sizeof(mgk_syn_plain_t)); ++i)
     if (RSA_public_encrypt(
@@ -299,6 +303,21 @@ int assemble_syn(szkr_ctx_t* ctx, mgk_syn_t* osyn)
   return( 0 );
 
 failure:
+  return( -1 );
+}
+
+szkr_err_t handle_synack(szkr_ctx_t* ctx, mgk_synack_t* isynack)
+{
+  return (szkr_err_unknown);
+}
+
+int check_ackack(mgk_ackack_t* iackack)
+{
+  return( 0 );
+}
+
+int assemble_ack(szkr_ctx_t* ctx, mgk_ack_t* oack)
+{
   return( -1 );
 }
 /** End Sazukari internal functions definitions **/
