@@ -16,7 +16,7 @@ slength_t writecb(byte* buf, length_t len, void* param)
 slength_t readcb(byte* buf, length_t len, void* param)
 {
   int sockfd = *(int*)(param);
-  return read(sockfd, buf, len);
+  return recv(sockfd, buf, len, 0);
 }
 
 szkr_iostream_t ios;
@@ -55,8 +55,7 @@ int main(int argc, char** argv)
   FILE* f = fopen("server.pub", "r");
   PEM_read_RSA_PUBKEY(f, &srv, NULL, "");
   BN_bn2bin(srv->n, srvkey.modulus);
-  BN_bn2bin(srv->e, srvkey.exponent + MEGAKI_RSA_EXPBYTES - BN_num_bytes(srv->e));
-
+  BN_bn2bin(srv->e, srvkey.exponent + MEGAKI_RSA_EXPBYTES - BN_num_bytes(srv->e));   
   szkr_new_ctx(ctx, ios, srvkey);
   szkr_do_handshake(ctx);
 

@@ -204,7 +204,7 @@ int read_packet(szkr_iostream_t* ios, byte* buffer, length_t packetlen)
   slength_t this_read = 0;
   while (read < packetlen &&
          (this_read = ios->read_callback(buffer + read, packetlen - read, 
-                                         ios->cb_param) > 0))
+                                         ios->cb_param)) > 0)
          
     read += this_read;
   
@@ -264,6 +264,8 @@ int assemble_syn(szkr_ctx_t* ctx, mgk_syn_t* osyn)
   osyn->header.type = magic_syn;
   
   mgk_syn_plain_t synplain;
+  memset(&synplain, 0, sizeof(mgk_syn_plain_t));
+
   SAZUKARI_ASSERT(BN_num_bytes(ctx->client_rsa->n) <= MEGAKI_RSA_KEYBYTES,
       "Not enough bytes to store the client RSA (n)");
   SAZUKARI_ASSERT(BN_num_bytes(ctx->client_rsa->e) <= MEGAKI_RSA_EXPBYTES,
@@ -312,7 +314,50 @@ failure:
 
 szkr_err_t handle_synack(szkr_ctx_t* ctx, mgk_synack_t* isynack)
 {
-  return (szkr_err_unknown);
+  mgk_synack_plain_t plain;
+  mgk_hash_t myhash;
+  if (!mgk_check_magic(&isynack->header))
+    return( szkr_err_protocol );
+
+  SAZUKARI_ASSERT(MEGAKI_RSA_BLOCKCOUNT(sizeof(mgk_synack_plain_t)) == 1,
+      "This is not implemented as it is not possible without severe "
+      "changes to the protocol. Please implement later if needed.");
+int res;
+  if ((res=RSA_private_decrypt(MEGAKI_RSA_KEYBYTES, (unsigned char*) &isynack->ciphertext[0].data,
+        (unsigned char*) &plain, ctx->client_rsa, RSA_PKCS1_OAEP_PADDING))
+      != sizeof(mgk_synack_plain_t)) {printf("%d\n",res);
+    ERR_print_errors_fp(stdout);
+    return( szkr_err_protocol );
+  }
+
+  SHA256((unsigned char*) &plain, sizeof(mgk_synack_plain_t), 
+      (unsigned char*) myhash.data);
+  if (!mgk_memeql(isynack->hash.data, myhash.data, MEGAKI_HASH_BYTES)) 
+    return( szkr_err_protocol );
+
+  if (mgk_memeql(isynack->token.data, MEGAKI_ERROR_TOKEN, MEGAKI_TOKEN_BYTES)) {
+    szkr_err_t err = szkr_err_unknown_errcode; 
+    if (mgk_memeql(plain.token.data,
+          MEGAKI_INCOMPATIBLE_VERSIONS_ERROR, MEGAKI_TOKEN_BYTES))
+      err = szkr_err_incompatible_versions;
+    else if (mgk_memeql(plain.token.data,
+          MEGAKI_SERVICE_UNAVAILABLE_ERROR, MEGAKI_TOKEN_BYTES))
+      err = szkr_err_service_unavailable;
+    else if (mgk_memeql(plain.token.data,
+          MEGAKI_SERVER_BLACKLISTED_ERROR, MEGAKI_TOKEN_BYTES))
+      err = szkr_err_server_blacklisted;
+
+    return( err );
+  } else {
+    memcpy(ctx->server_symmetric.data, plain.server_symmetric.data, MEGAKI_AES_KEYBYTES);
+    memcpy(ctx->token.data, plain.token.data, MEGAKI_TOKEN_BYTES);
+    if (AES_set_encrypt_key(plain.server_symmetric.data, MEGAKI_AES_KEYSIZE,
+          &ctx->kenc) != 0) {
+      return( szkr_err_internal );
+    }
+  }
+
+  return( szkr_err_none );
 }
 
 int check_ackack(mgk_ackack_t* iackack)

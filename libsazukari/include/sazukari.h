@@ -16,6 +16,7 @@ typedef enum szkr_err_t {
   szkr_err_unknown,
   szkr_err_incompatible_versions,
   szkr_err_service_unavailable,
+  szkr_err_unknown_errcode,
   szkr_err_invalid_state,
   szkr_err_protocol,
   szkr_err_internal,
