@@ -333,7 +333,6 @@ void handle_syn(yami_ctx_t* ctx, yami_resp_t* resp, byte* buffer)
     YAMI_DIAGLOGS("Internal error: could not convert bignum exponent");
     goto destroy_modulus;
   }
-  
   RSA* clrsa = RSA_new();
   if (!clrsa) {
    YAMI_DIAGLOGS("Internal error: could not create client RSA");
@@ -364,7 +363,7 @@ void handle_syn(yami_ctx_t* ctx, yami_resp_t* resp, byte* buffer)
     resp->data_size = sizeof( mgk_synack_t );
     ctx->state = MGS_WAITING_ACK;
   }
-  
+ 
   RSA_free(clrsa);
   return ;
   
