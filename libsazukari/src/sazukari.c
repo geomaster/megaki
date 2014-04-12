@@ -317,6 +317,9 @@ szkr_err_t handle_synack(szkr_ctx_t* ctx, mgk_synack_t* isynack)
 {
   mgk_synack_plain_t plain;
   mgk_hash_t myhash;
+
+  szkr_err_t res = szkr_err_unknown;
+
   if (!mgk_check_magic(&isynack->header))
     return( szkr_err_protocol );
 
@@ -324,16 +327,22 @@ szkr_err_t handle_synack(szkr_ctx_t* ctx, mgk_synack_t* isynack)
       "This is not implemented as it is not possible without severe "
       "changes to the protocol. Please implement later if needed.");
   
+  if (!RSA_blinding_on(ctx->client_rsa, NULL))
+    return( szkr_err_internal );
+
   if (RSA_private_decrypt(MEGAKI_RSA_KEYBYTES, (unsigned char*) &isynack->ciphertext[0].data,
         (unsigned char*) &plain, ctx->client_rsa, RSA_PKCS1_OAEP_PADDING)
       != sizeof(mgk_synack_plain_t)) {
-    return( szkr_err_protocol );
+    res = szkr_err_protocol;
+    goto blind_off;
   }
 
   SHA256((unsigned char*) &plain, sizeof(mgk_synack_plain_t), 
       (unsigned char*) myhash.data);
-  if (!mgk_memeql(isynack->hash.data, myhash.data, MEGAKI_HASH_BYTES)) 
-    return( szkr_err_protocol );
+  if (!mgk_memeql(isynack->hash.data, myhash.data, MEGAKI_HASH_BYTES)) {
+    res = szkr_err_protocol;
+    goto blind_off;
+  }
 
   if (mgk_memeql(isynack->token.data, MEGAKI_ERROR_TOKEN, MEGAKI_TOKEN_BYTES)) {
     szkr_err_t err = szkr_err_unknown_errcode; 
@@ -347,17 +356,23 @@ szkr_err_t handle_synack(szkr_ctx_t* ctx, mgk_synack_t* isynack)
           MEGAKI_SERVER_BLACKLISTED_ERROR, MEGAKI_TOKEN_BYTES))
       err = szkr_err_server_blacklisted;
 
-    return( err );
+    res = err;
+    goto blind_off;
   } else {
     memcpy(ctx->server_symmetric.data, plain.server_symmetric.data, MEGAKI_AES_KEYBYTES);
     memcpy(ctx->token.data, plain.token.data, MEGAKI_TOKEN_BYTES);
     if (AES_set_encrypt_key((unsigned char*) plain.server_symmetric.data, 
           MEGAKI_AES_KEYSIZE, &ctx->kenc) != 0) {
-      return( szkr_err_internal );
+      res = szkr_err_internal;
+      goto blind_off;
     }
   }
 
   return( szkr_err_none );
+
+blind_off:
+  RSA_blinding_off(ctx->client_rsa);
+  return( res );
 }
 
 int check_ackack(mgk_ackack_t* iackack)
