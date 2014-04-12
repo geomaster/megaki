@@ -40,7 +40,7 @@ int main(int argc, char** argv)
     .queue_size = 2000,
     .log_file = stderr,
     .log_level = LOG_DEBUG2,
-    .receive_timeout = 40000,
+    .receive_timeout = 1000000,
     .buffer_length = 16384,
     .socket_backlog = 50,
     .watchdog_interval = 5000
