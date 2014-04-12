@@ -534,8 +534,8 @@ void handle_msg(yami_ctx_t* ctx, yami_resp_t* resp, byte* buf)
   }
   
   if (!HMAC(EVP_sha256(), ctx->x.synacks.token->payload, MEGAKI_AES_KEYBYTES,
-            (unsigned char*) msg_contents->data, length, (unsigned char*)
-            hmac->data, &ldummy)) {
+            (unsigned char*) hdr->iv.data, length + MEGAKI_AES_BLOCK_BYTES, 
+            (unsigned char*) hmac->data, &ldummy)) {
     YAMI_DIAGLOGS("Internal error: could not compute HMAC");
     goto kill_connection;
   }

@@ -219,9 +219,9 @@ int szkr_send_message(szkr_ctx_t* ctx, const byte* msg, length_t msglen,
       &ctx->kenc, (unsigned char*) iv, AES_ENCRYPT);
   
   if (!HMAC(EVP_sha256(), (unsigned char*) ctx->master_symmetric.data, 
-        MEGAKI_AES_KEYBYTES, (unsigned char*) smsg.data, 
-        MEGAKI_AES_ENCSIZE(msglen), (unsigned char*) smsg.hdr.mac.data,
-        &ldummy)) {
+        MEGAKI_AES_KEYBYTES, (unsigned char*) smsg.hdr.iv.data, 
+        MEGAKI_AES_ENCSIZE(msglen) + MEGAKI_AES_BLOCK_BYTES,
+        (unsigned char*) smsg.hdr.mac.data, &ldummy)) {
     err = szkr_err_internal;
     goto failure;
   }
