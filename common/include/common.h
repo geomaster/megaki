@@ -18,6 +18,9 @@
 #define MEGAKI_VERSION_BYTES              2
 #define MEGAKI_LENGTH_BYTES               4
 
+#define MEGAKI_MAX_PACKETSIZE             8448
+#define MEGAKI_MAX_MSGSIZE                8192
+
 #define MEGAKI_AES_KEYBYTES               (MEGAKI_AES_KEYSIZE / 8)
 #define MEGAKI_RSA_EXPBYTES               (MEGAKI_RSA_EXPSIZE / 8)
 #define MEGAKI_RSA_KEYBYTES               (MEGAKI_RSA_KEYSIZE / 8)
