@@ -1,7 +1,7 @@
 #ifndef __YAMI_H__
 #define __YAMI_H__
 #include "common.h"
-#define YAMI_MAX_PACKET_LENGTH            8400
+#define YAMI_MAX_PACKET_LENGTH            MEGAKI_MAX_PACKETSIZE
 
 /** Is this a debug build? **/
 #ifdef DEBUG

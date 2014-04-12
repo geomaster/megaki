@@ -27,8 +27,7 @@
 #define min(a, b) ((a) < (b) ? (a) : (b))
 
 #define YAMI_MAX_MESSAGE_LENGTH         \
-  (MEGAKI_AES_BLOCK_BYTES * ((YAMI_MAX_PACKET_LENGTH - \
-  sizeof(mgk_msghdr_t)) / MEGAKI_AES_BLOCK_BYTES))
+  MEGAKI_MAX_MSGSIZE
   
 #define YAMI_DIAGNOSTIC
 
@@ -548,7 +547,7 @@ void handle_msg(yami_ctx_t* ctx, yami_resp_t* resp, byte* buf)
   
   AES_cbc_encrypt((unsigned char*) msg_contents, (unsigned char*) msg,
                   length, &ctx->x.ackr.kdec, (unsigned char*) hdr->iv.data, 
-                  AES_ENCRYPT);
+                  AES_DECRYPT);
   YAMI_DIAGLOGS("Decrypted message, TODO: Pegasus!");
   
   return ;
