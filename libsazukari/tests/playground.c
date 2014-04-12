@@ -57,7 +57,10 @@ int main(int argc, char** argv)
   BN_bn2bin(srv->n, srvkey.modulus);
   BN_bn2bin(srv->e, srvkey.exponent + MEGAKI_RSA_EXPBYTES - BN_num_bytes(srv->e));   
   szkr_new_ctx(ctx, ios, srvkey);
-  szkr_do_handshake(ctx);
+  if (szkr_do_handshake(ctx) == 0) {
+    printf("success!\n");
+    while(1);
+  }
 
   return(0);
 }
