@@ -385,14 +385,15 @@ kill_connection:
 int assemble_synack(yami_ctx_t* ctx, RSA* clrsa, mgk_synack_t* res, const byte* err)
 {
   mgk_synack_plain_t plain;
-  if (!RAND_pseudo_bytes(plain.token.data, MEGAKI_TOKEN_BYTES)) {
+  YAMI_DIAGLOGS("Assembling SYN-ACK");
+  if (RAND_pseudo_bytes(plain.token.data, MEGAKI_TOKEN_BYTES) < 0) {
     YAMI_DIAGLOGS("Internal error: failed to generate pseudo bytes for token");
     goto failure;
   }
 
   tokentry* tok;
   if (!err) {
-    if (!RAND_bytes(plain.server_symmetric.data, MEGAKI_AES_KEYBYTES)) {
+    if (RAND_bytes(plain.server_symmetric.data, MEGAKI_AES_KEYBYTES) != 1) {
       YAMI_DIAGLOGS("Internal error: failed to generate random bytes for srvsymm");
       goto failure;
     }
@@ -432,7 +433,8 @@ int assemble_synack(yami_ctx_t* ctx, RSA* clrsa, mgk_synack_t* res, const byte* 
     YAMI_DIAGLOGS("Could not encrypt with client public key");
     goto blind_off;
   }
-  
+ 
+  YAMI_DIAGLOGS("SYN-ACK assembled");
   return(0);
   
 blind_off:
