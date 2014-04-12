@@ -1,6 +1,7 @@
 #include "sazukari.h"
 #include "megaki.h"
 #include <string.h>
+#include <arpa/inet.h>
 #include <openssl/rsa.h>
 #include <openssl/err.h>
 #include <openssl/bn.h>
@@ -38,6 +39,11 @@ typedef struct szkr_ctx_t {
     state_ready
   } state;
 } szkr_ctx_t;
+
+typedef struct szkr_msg_t {
+  mgk_msghdr_t    hdr;
+  byte            data[ MEGAKI_AES_ENCSIZE(MEGAKI_MAX_MSGSIZE) ];
+} szkr_msg_t;
 /** End definitions of Sazukari objects **/
 
 /** Sazukari internal functions **/
@@ -179,7 +185,59 @@ failure:
 int szkr_send_message(szkr_ctx_t* ctx, const byte* msg, length_t msglen,
                      byte* responsebuf, length_t* responselen)
 {
-  return(-1);
+  szkr_msg_t smsg;
+  szkr_err_t err;
+  mgk_fill_magic(&smsg.hdr.preamble.header);
+  smsg.hdr.preamble.header.type = magic_msg;
+  smsg.hdr.preamble.length = htonl(msglen);
+
+  if (msglen > MEGAKI_MAX_MSGSIZE) {
+    err = szkr_err_message_too_long;
+    goto failure;
+  }
+
+  byte iv[ MEGAKI_AES_BLOCK_BYTES ];
+  if (RAND_bytes((unsigned char*) iv, MEGAKI_AES_BLOCK_BYTES) != 1) {
+    err = szkr_err_internal;
+    goto failure;
+  }
+
+  unsigned int ldummy;
+  memcpy(smsg.hdr.token.data, ctx->token.data, MEGAKI_TOKEN_BYTES);
+  memcpy(smsg.hdr.iv.data, iv, MEGAKI_AES_BLOCK_BYTES);
+ 
+  SAZUKARI_ASSERT(MEGAKI_AES_ENCSIZE(msglen) > msglen, "Impossible condition");
+  length_t leftover = MEGAKI_AES_ENCSIZE(msglen) - msglen;
+  if (leftover > 0) {
+    if (RAND_pseudo_bytes(smsg.data + msglen, leftover) < 0) {
+      err = szkr_err_internal;
+      goto failure;
+    }
+  }
+
+  AES_cbc_encrypt((unsigned char*) msg, (unsigned char*) smsg.data, msglen,
+      &ctx->kenc, (unsigned char*) iv, AES_ENCRYPT);
+  
+  if (!HMAC(EVP_sha256(), (unsigned char*) ctx->master_symmetric.data, 
+        MEGAKI_AES_KEYBYTES, (unsigned char*) smsg.data, 
+        MEGAKI_AES_ENCSIZE(msglen), (unsigned char*) smsg.hdr.mac.data,
+        &ldummy)) {
+    err = szkr_err_internal;
+    goto failure;
+  }
+
+  if (!write_packet(&ctx->ios, (byte*) &smsg, sizeof(mgk_msghdr_t) + 
+        MEGAKI_AES_ENCSIZE(msglen))) {
+    err = szkr_err_io;
+    goto failure;
+  }
+
+  ctx->last_err = szkr_err_none;
+  return( 0 );
+
+failure:
+  ctx->last_err = err;
+  return( -1 );
 }
 // Note to further self: please find all references to 'int' and 'slength_t' in
 // this source code and see if they pose a security risk! I know what I'm saying.

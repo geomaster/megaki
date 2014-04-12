@@ -59,6 +59,8 @@ int main(int argc, char** argv)
   szkr_new_ctx(ctx, ios, srvkey);
   if (szkr_do_handshake(ctx) == 0) {
     printf("success!\n");
+    char msg[] = "hello world!";
+    szkr_send_message(ctx, msg, sizeof(msg) - 1, NULL, NULL);
     while(1);
   }
 

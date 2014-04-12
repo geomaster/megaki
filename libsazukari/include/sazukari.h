@@ -22,7 +22,8 @@ typedef enum szkr_err_t {
   szkr_err_internal,
   szkr_err_io,
   szkr_err_rehandshake_needed,
-  szkr_err_server_blacklisted
+  szkr_err_server_blacklisted,
+  szkr_err_message_too_long
 } szkr_err_t;
 
 typedef slength_t (* szkr_write_cb)(byte*, length_t, void*);
