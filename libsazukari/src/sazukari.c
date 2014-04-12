@@ -154,7 +154,8 @@ int szkr_do_handshake(szkr_ctx_t* ctx)
                           &ctx->kdec) != 0) {
     goto internal_err;
   }
-  
+ 
+  ctx->last_err = szkr_err_none;
   ctx->state = state_ready;
   return( 0 );
 
@@ -322,11 +323,10 @@ szkr_err_t handle_synack(szkr_ctx_t* ctx, mgk_synack_t* isynack)
   SAZUKARI_ASSERT(MEGAKI_RSA_BLOCKCOUNT(sizeof(mgk_synack_plain_t)) == 1,
       "This is not implemented as it is not possible without severe "
       "changes to the protocol. Please implement later if needed.");
-int res;
-  if ((res=RSA_private_decrypt(MEGAKI_RSA_KEYBYTES, (unsigned char*) &isynack->ciphertext[0].data,
-        (unsigned char*) &plain, ctx->client_rsa, RSA_PKCS1_OAEP_PADDING))
-      != sizeof(mgk_synack_plain_t)) {printf("%d\n",res);
-    ERR_print_errors_fp(stdout);
+  
+  if (RSA_private_decrypt(MEGAKI_RSA_KEYBYTES, (unsigned char*) &isynack->ciphertext[0].data,
+        (unsigned char*) &plain, ctx->client_rsa, RSA_PKCS1_OAEP_PADDING)
+      != sizeof(mgk_synack_plain_t)) {
     return( szkr_err_protocol );
   }
 
@@ -351,8 +351,8 @@ int res;
   } else {
     memcpy(ctx->server_symmetric.data, plain.server_symmetric.data, MEGAKI_AES_KEYBYTES);
     memcpy(ctx->token.data, plain.token.data, MEGAKI_TOKEN_BYTES);
-    if (AES_set_encrypt_key(plain.server_symmetric.data, MEGAKI_AES_KEYSIZE,
-          &ctx->kenc) != 0) {
+    if (AES_set_encrypt_key((unsigned char*) plain.server_symmetric.data, 
+          MEGAKI_AES_KEYSIZE, &ctx->kenc) != 0) {
       return( szkr_err_internal );
     }
   }
@@ -362,11 +362,60 @@ int res;
 
 int check_ackack(mgk_ackack_t* iackack)
 {
-  return( 0 );
+  return( mgk_check_magic(&iackack->header) && 
+          iackack->header.type == magic_ackack);
 }
 
 int assemble_ack(szkr_ctx_t* ctx, mgk_ack_t* oack)
 {
+  byte plainb[MEGAKI_AES_ENCSIZE(sizeof(mgk_ack_plain_t))];
+  memset(plainb, 0, sizeof(plainb));
+
+  mgk_ack_plain_t *plain = (mgk_ack_plain_t*) plainb;
+  mgk_fill_magic(&oack->header);
+  oack->header.type = magic_ack;
+
+  mgk_aes_block_t iv;
+  if (RAND_bytes((unsigned char*) plain->client_symmetric.data, 
+        MEGAKI_AES_KEYBYTES) != 1)
+    goto failure;
+  
+  if (RAND_bytes((unsigned char*) iv.data, MEGAKI_AES_BLOCK_BYTES) != 1)
+    goto failure;
+
+  static const slength_t leftover = MEGAKI_AES_ENCSIZE(sizeof(mgk_ack_plain_t)) - 
+    sizeof(mgk_ack_plain_t);
+  SAZUKARI_ASSERT(leftover >= 0, "Impossible condition!");
+
+  if (leftover > 0) { /* known at compile time */
+    /* pad with pseudo-randomness if there is leftover space */
+    if (RAND_pseudo_bytes(plainb + sizeof(mgk_ack_t), leftover) < 0)
+      return( -1 );
+  }
+  memcpy(oack->token.data, ctx->token.data, MEGAKI_TOKEN_BYTES);
+  memcpy(plain->token.data, ctx->token.data, MEGAKI_TOKEN_BYTES);
+  SHA256((unsigned char*) plainb, sizeof(mgk_ack_plain_t),
+      (unsigned char*) oack->hash.data);
+  memcpy(oack->iv.data, iv.data, MEGAKI_AES_BLOCK_BYTES);
+
+  /* so there is no documentation on these functions whatsoever
+   * and I'm left to fuck with them on my own. not even a comment
+   * in aes.h.
+   *
+   * and yet, this crapfuck function mangles my IV. it fucking mangles
+   * my fucking IV i give to it as a read-only array, jesus fucking
+   * christ shit. took me half an hour to figure this one. fuck you,
+   * openssl devs, and eat my giant cock
+   */
+  AES_cbc_encrypt((unsigned char*) plainb, (unsigned char*) oack->ciphertext,
+      sizeof(plainb), &ctx->kenc, (unsigned char*) iv.data, AES_ENCRYPT);
+
+  mgk_derive_master(ctx->server_symmetric.data, plain->client_symmetric.data,
+      ctx->master_symmetric.data);
+
+  return( 0 );
+
+failure:
   return( -1 );
 }
 /** End Sazukari internal functions definitions **/
