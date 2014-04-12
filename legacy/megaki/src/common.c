@@ -40,7 +40,7 @@ void mgk_fill_magic(byte* buf, magic_type type)
   buf[0] = 'M';
   buf[1] = 'G';
   buf[2] = 'K';
-  buf[3] = 0xEA;
+  buf[3] = 0xAA;
   buf[4] = 0xCA;
   switch (type) {
   case magic_syn: buf[5] = 0x01; break;
@@ -55,7 +55,7 @@ void mgk_fill_magic(byte* buf, magic_type type)
 magic_type mgk_check_magic(const byte* buf)
 {
   if (buf[0] == 'M' && buf[1] == 'G' && buf[2] == 'K' &&
-      buf[3] == 0xEA && buf[4] == 0xCA) {
+      buf[3] == 0xAA && buf[4] == 0xCA) {
     switch (buf[5]) {
     case 0x01: return magic_syn;
     case 0x02: return magic_synack;
