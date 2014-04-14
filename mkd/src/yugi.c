@@ -73,7 +73,8 @@ typedef struct yugi_t {
   byte              *uv_buffer;
   yugi_conf_t       config;
   int               killswitch,
-                    dropped_connections;
+                    dropped_connections,
+                    connection_count;
   conn_node_t       *connections;
   
   /** Queried from Yami **/
@@ -355,7 +356,14 @@ void on_client_connect(uv_stream_t* server, int status)
     #endif
     goto failure;
   }
-  
+ 
+  if (yc->config.max_clients > 0 && 
+      yc->connection_count >= yc->config.max_clients) {
+    ++yc->dropped_connections;
+    goto failure;
+  }
+  ++yc->connection_count;
+
   uv_tcp_t* client = malloc(sizeof(uv_tcp_t));
   if ((res = uv_tcp_init(yc->uv_loop, client)) != 0) {
     YUGI_LOGF(LOG_WARNING, "Failed TCP init, not expected behavior (%s)", uv_strerror(res));
@@ -748,13 +756,12 @@ void job_handle_message(void* data)
 int close_connection(conn_t* c)
 {
   int res = 0;
-  #ifdef YUGI_DEBUG
   yugi_t* yc = c->parent;
-  #endif
  
   YUGI_LOGCONNS(c, "Closing connection");
   kill_timeout_timer(c);
 
+  --yc->connection_count;
   if (c->is_closed)
     return(0); /* already done */
   else {

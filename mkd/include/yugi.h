@@ -30,7 +30,10 @@ typedef struct yugi_conf_t {
   /*** How much should Yugi wait for a reply before it considers it
    *** timed out? (in ms) ***/ 
   int            receive_timeout;
-  
+
+  /*** Maximum client count (to prevent server thrashing (0 for no limit) ***/
+  int             max_clients;
+
   /*** Maximum buffer length. This primarily affects Yugi's inner
    *** workings with libuv, it typically shouldn't be less than 1024.
    ***/   
