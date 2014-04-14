@@ -251,7 +251,7 @@ int yugi_start(yugi_t* yc)
   struct sockaddr_in addr;
   res = uv_ip4_addr(yc->config.listen_address, yc->config.listen_port, &addr);
   if (res != 0) {
-    YUGI_LOGF(LOG_ERROR, "Could not resolve local hostanme %s:%d (%s)",
+    YUGI_LOGF(LOG_ERROR, "Could not resolve local hostname %s:%d (%s)",
       yc->config.listen_address, yc->config.listen_port, uv_strerror(res));
     goto failure;
   }
