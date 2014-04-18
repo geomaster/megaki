@@ -565,6 +565,7 @@ void async_cb_freeconn(uv_async_t* handle)
     cnode->next->prev = cnode->prev;
   
   sem_destroy(&c->recvmut);  
+  pthread_mutex_destroy(&c->refmut);
   free(cnode);
   free(c);
   YUGI_ASYNC_END_BOILERPLATE(handle);
