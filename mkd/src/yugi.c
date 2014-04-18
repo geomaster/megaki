@@ -411,8 +411,16 @@ void on_client_connect(uv_stream_t* server, int status)
   pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
   */
   
-  sem_init(&conn->recvmut, 0, 1);
-  pthread_mutex_init(&conn->refmut, 0);
+  if (sem_init(&conn->recvmut, 0, 1) == -1) {
+    YUGI_LOGS(LOG_WARNING, "Failed to init semaphore, dropping");
+    goto dealloc_connection;
+  }
+
+  if (!pthread_mutex_init(&conn->refmut, 0)) {
+    YUGI_LOGS(LOG_WARNING, "Failed to init mutex, dropping");
+    goto destroy_semaphore;
+  }
+
   if ((res = uv_timer_init(yc->uv_loop, &conn->timeout_tmr)) == -1) {
     YUGI_LOGF(LOG_WARNING, "Failed to init timer, dropping (%s)", uv_strerror(res));
     goto destroy_mutexes;
@@ -458,9 +466,11 @@ void on_client_connect(uv_stream_t* server, int status)
   return ;
   
 destroy_mutexes:
-  sem_destroy(&conn->recvmut);
   pthread_mutex_destroy(&conn->refmut);
-  
+ 
+destroy_semaphore:
+  sem_destroy(&conn->recvmut);
+
 dealloc_connection_node:
   free(cnode);
   
