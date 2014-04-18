@@ -340,7 +340,7 @@ void async_cb_closeconn(uv_async_t* handle)
 
 void kill_timeout_timer(conn_t* c)
 {
-  int res = uv_timer_stop(&c->timeout_tmr);
+  uv_timer_stop(&c->timeout_tmr);
   c->is_timed = 0;
   uv_close((uv_handle_t*) &c->timeout_tmr, NULL);
 }
@@ -663,7 +663,12 @@ void on_data_read(uv_stream_t* stream, ssize_t nread, const uv_buf_t* buf)
     goto close_conn;
   }
   
-  sem_wait(&c->recvmut);
+  if (sem_timedwait(&c->recvmut, &yc->config.lock_timeout) != 0) {
+    YUGI_LOGCONNS(c, "Killing connection, could not lock semaphore");
+    YUGI_LOGS(LOG_WARNING, "Semaphore wait failed (probably timeout), dropping connection");
+    goto close_conn;
+  }
+
   int newsize = c->recvlen + (int) nread;
   uv_timer_start(&c->timeout_tmr, &on_timeout_tick, yc->config.receive_timeout, 0);
   

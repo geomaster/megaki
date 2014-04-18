@@ -43,7 +43,8 @@ int main(int argc, char** argv)
     .receive_timeout = 1000000,
     .buffer_length = 16384,
     .socket_backlog = 50,
-    .watchdog_interval = 5000
+    .watchdog_interval = 5000,
+    .lock_timeout = { .tv_sec = 40, .tv_nsec = 0 }
   };
   yugi_init(yugi, &conf);
   yugi_start(yugi);

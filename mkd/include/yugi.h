@@ -1,6 +1,7 @@
 #ifndef __YUGI_H__
 #define __YUGI_H__
 #include <stdio.h>
+#include <time.h>
 #include "yami.h"
 #include "common.h"
 
@@ -51,6 +52,10 @@ typedef struct yugi_conf_t {
    
    /*** How often (in ms) should the watchdog timer tick ***/
    int           watchdog_interval;
+
+   /*** How much to wait on syncprim locks before failing ***/
+   struct timespec lock_timeout;
+
   /** End configuration options for MKD Yugi **/
 } yugi_conf_t;
 
