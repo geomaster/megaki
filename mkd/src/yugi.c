@@ -413,7 +413,7 @@ void on_client_connect(uv_stream_t* server, int status)
   
   if (sem_init(&conn->recvmut, 0, 1) == -1) {
     YUGI_LOGS(LOG_WARNING, "Failed to init semaphore, dropping");
-    goto dealloc_connection;
+    goto dealloc_connection_node;
   }
 
   if (!pthread_mutex_init(&conn->refmut, 0)) {
