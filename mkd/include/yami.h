@@ -11,7 +11,7 @@
 typedef struct yami_conf_t {
   /** Configuration options for MKD Yami **/
   
-   /*** Server certificate raw data and size ***/
+  /*** Server certificate raw data and size ***/
   byte*         certificate_buffer;
   length_t      certificate_size;
   
