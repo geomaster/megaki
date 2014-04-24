@@ -56,11 +56,14 @@
   uv_close((uv_handle_t*) (handle), &on_close_async)
 
 #define YUGI_NONFAIL(f) \
-  if (!(f)) \
+  if (!(f)) { \
     YUGI_LOGF(LOG_FATAL, \
         "A non-fail call (%s) has failed: unsafe to continue", \
         #f \
-    )
+    ); \
+    YUGI_ASSERT(0, "Non-fail call failure"); \
+  }
+
 /** End internal macros **/
 
 /** Globals **/
