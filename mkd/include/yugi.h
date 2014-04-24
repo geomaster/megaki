@@ -54,7 +54,7 @@ typedef struct yugi_conf_t {
    int           watchdog_interval;
 
    /*** How much to wait on syncprim locks before failing ***/
-   struct timespec lock_timeout;
+   int           lock_timeout;
 
   /** End configuration options for MKD Yugi **/
 } yugi_conf_t;

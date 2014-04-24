@@ -28,20 +28,20 @@
 
 /** Debug macros **/
 #ifdef YUGI_DEBUG
-#include <assert.h>
-#define YUGI_ASSERT(cond, msg) \
-  assert((cond) && msg)
-  
 #define YUGI_LOGCONNF(c, fmt, ...) \
   YUGI_LOGF(LOG_DEBUG2, "[%s] " fmt, (c)->dbg_id, __VA_ARGS__)
 
 #define YUGI_LOGCONNS(c, str) \
   YUGI_LOGF(LOG_DEBUG2, "[%s] " str, (c)->dbg_id)
 #else
-#define YUGI_ASSERT(cond, msg)
 #define YUGI_LOGCONNF(c, fmt, ...)
 #define YUGI_LOGCONNS(c, str)
 #endif
+
+#include <assert.h>
+#define YUGI_ASSERT(cond, msg) \
+  assert((cond) && msg)
+  
 /** End debug macros **/
 
 /** Internal macros **/
@@ -54,7 +54,13 @@
 #define YUGI_GRAB_ASYNC_END_BOILERPLATE(handle, c) \
   release_connection((c)); \
   uv_close((uv_handle_t*) (handle), &on_close_async)
-  
+
+#define YUGI_NONFAIL(f) \
+  if (!(f)) \
+    YUGI_LOGF(LOG_FATAL, \
+        "A non-fail call (%s) has failed: unsafe to continue", \
+        #f \
+    )
 /** End internal macros **/
 
 /** Globals **/
@@ -520,12 +526,13 @@ void on_data_written(uv_write_t* req, int status)
 
 void grab_connection(conn_t* c)
 {
+  yugi_t *yc = c->parent;
   YUGI_ASSERT(c->refcount >= 1, "This connection has already been destroyed "
                                 "which indicates a bug");
 
-  pthread_mutex_lock(&c->refmut);
+  YUGI_NONFAIL(pthread_mutex_lock(&c->refmut) == 0);
   c->refcount++;
-  pthread_mutex_unlock(&c->refmut);
+  YUGI_NONFAIL(pthread_mutex_unlock(&c->refmut) == 0);
 }
 
 void release_connection(conn_t* c)
@@ -537,9 +544,9 @@ void release_connection(conn_t* c)
   YUGI_ASSERT(c->refcount >= 1, "This connection has already been destroyed "
                                 "which indicates a bug");
   
-  pthread_mutex_lock(&c->refmut);
+  YUGI_NONFAIL(pthread_mutex_lock(&c->refmut) == 0);
   int newrc = --c->refcount;
-  pthread_mutex_unlock(&c->refmut);
+  YUGI_NONFAIL(pthread_mutex_unlock(&c->refmut) == 0);
   
   if (newrc <= 0) {
     YUGI_LOGCONNS(c, "Spawning async to free connection");
@@ -663,7 +670,12 @@ void on_data_read(uv_stream_t* stream, ssize_t nread, const uv_buf_t* buf)
     goto close_conn;
   }
   
-  if (sem_timedwait(&c->recvmut, &yc->config.lock_timeout) != 0) {
+  struct timespec ts;
+  if (clock_gettime(CLOCK_REALTIME, &ts) == -1)
+    goto close_conn;
+  ts.tv_sec += yc->config.lock_timeout;
+
+  if (sem_timedwait(&c->recvmut, &ts) != 0) {
     YUGI_LOGCONNS(c, "Killing connection, could not lock semaphore");
     YUGI_LOGS(LOG_WARNING, "Semaphore wait failed (probably timeout), dropping connection");
     goto close_conn;
@@ -745,7 +757,7 @@ void job_handle_message(void* data)
   length_t len = c->recvlen;
   c->recvlen = 0;
   sem_post(&c->recvmut);
-  
+
   yami_resp_t resp = yami_incoming(YUGI_CYAMI(c), c->recvbuf, len);
   c->sndlen = resp.data_size;
   
