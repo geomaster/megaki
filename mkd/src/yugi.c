@@ -27,6 +27,10 @@
 /** End log macros **/
 
 /** Debug macros **/
+#include <assert.h>
+#define YUGI_ASSERT(cond, msg) \
+  assert((cond) && msg)
+
 #ifdef YUGI_DEBUG
 #define YUGI_LOGCONNF(c, fmt, ...) \
   YUGI_LOGF(LOG_DEBUG2, "[%s] " fmt, (c)->dbg_id, __VA_ARGS__)
@@ -38,9 +42,6 @@
 #define YUGI_LOGCONNS(c, str)
 #endif
 
-#include <assert.h>
-#define YUGI_ASSERT(cond, msg) \
-  assert((cond) && msg)
   
 /** End debug macros **/
 

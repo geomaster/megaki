@@ -55,11 +55,10 @@ typedef struct yami_ctx_t {
 /** End internal structures for MKD Yami **/
 
 /** Debug macros **/
-#ifdef YAMI_DEBUG
 #include <assert.h>
 #define YAMI_ASSERT(cond, msg) \
     assert((cond) && msg)
-    
+#ifdef YAMI_DEBUG
 #ifdef YAMI_DIAGNOSTIC
 #define YAMI_DIAGLOGS(s) \
     MEGAKI_LOGS(stderr, "YAMI", (s))
@@ -72,7 +71,6 @@ typedef struct yami_ctx_t {
 #endif
 
 #else
-#define YAMI_ASSERT(cond, msg)
 #define YAMI_DIAGLOGS(s)
 #define YAMI_DIAGLOGF(f, ...)
 #endif
