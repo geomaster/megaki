@@ -20,7 +20,8 @@ HEADERNAMES = \
               common.h \
               tokenbank.h \
               megaki.h \
-              sslc.h
+              sslc.h \
+              pmdk.h
 
 COMMONHEADERS = \
               common.h \
