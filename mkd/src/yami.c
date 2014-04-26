@@ -124,6 +124,7 @@ int yami_init(yami_conf_t* config)
   if (!bio)
     goto cleanup_ossl;
   
+  yami__servercert = NULL;
   PEM_read_bio_RSAPrivateKey(bio, &yami__servercert, NULL,
                              (void*)config->certificate_passphrase);
   if (!yami__servercert)
