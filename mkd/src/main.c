@@ -1,6 +1,8 @@
 #include <stdio.h>
 #include "yugi.h"
 #include "yami.h"
+#include <unistd.h>
+#include "pegasus.h"
 #include <malloc.h>
 #include <signal.h>
 yugi_t* yugi;
@@ -8,6 +10,18 @@ yugi_t* yugi;
 void handle_signal(int sig)
 {
   yugi_stop(yugi);
+}
+
+int writecb(byte* buf, length_t len, void* pam)
+{
+  printf("What are you doing honey...? I'm not ready y-y-yet... Yamette kure!\n");
+  return 0;
+}
+int broker(void* param)
+{
+  fprintf(stderr, "Err... I'm the broker... Or something... This is embarrassing.\n");
+  fflush(stderr);
+  while (1) sleep(10) ;
 }
 
 byte cert[1766];
@@ -19,14 +33,30 @@ int main(int argc, char** argv)
   fread(cert, 1766, 1, f);
   fclose(f);
   
+  pegasus_conf_t pconf = {
+    .write_cb = &writecb,
+    .start_broker_cb = &broker,
+    .start_broker_cb_param = NULL,
+    .context_data_length = 4,
+    .minion_pool_size = 25,
+    .log_level = LOG_DEBUG2,
+    .log_file = stderr,
+    .lock_timeout = 10
+  };
+  if (pegasus_init(&pconf) != 0) {
+    fprintf(stderr, "Pegasus did not start up\n");
+    return -1;
+  }
+
   yami_conf_t yconf = {
     .certificate_passphrase = "crno je sve",
     .certificate_buffer = cert,
     .certificate_size = 1766
   };
-  if (yami_init(&yconf) != 0)
+  if (yami_init(&yconf) != 0) {
     fprintf(stderr, "Yami did not start up\n");
-  
+    return -1;
+  }
   struct sigaction siginth;  
   siginth.sa_handler = handle_signal;
   sigemptyset(&siginth.sa_mask);
