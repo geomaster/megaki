@@ -2,6 +2,7 @@
 #include "megaki.h"
 #include "sslc.h"
 #include "tokenbank.h"
+#include "pegasus.h"
 #include <malloc.h>
 #include <string.h>
 #include <arpa/inet.h>
@@ -28,7 +29,10 @@
 
 #define YAMI_MAX_MESSAGE_LENGTH         \
   MEGAKI_MAX_MSGSIZE
-  
+
+#define YAMI_CPEGASUS(ctx) \
+  (pegasus_ctx_t*)((byte*) ctx + sizeof(yami_ctx_t))
+
 #define YAMI_DIAGNOSTIC
 
 /** Internal structures for MKD Yami **/
@@ -51,6 +55,8 @@ typedef struct yami_ctx_t {
       AES_KEY kenc, kdec;
     } ackr;
   } x;
+
+  int has_pegasus_ctx;
 } yami_ctx_t;
 /** End internal structures for MKD Yami **/
 
@@ -80,12 +86,14 @@ typedef struct yami_ctx_t {
 BN_CTX* yami__scbn;
 RSA* yami__servercert;
 char yami__version[100];
+length_t yami__pegasusctxsize;
 /** End global variables **/
 
 /** Prototypes for internal procedures **/
 void handle_syn(yami_ctx_t* ctx, yami_resp_t* resp, byte* buf);
 void handle_synack(yami_ctx_t* ctx, yami_resp_t* resp, byte* buf);
 void handle_ack(yami_ctx_t* ctx, yami_resp_t* resp, byte* buf);
+int  on_connect_successful(yami_ctx_t* ctx, byte* ctxdata);
 int  assemble_synack(yami_ctx_t* ctx, RSA* clrsa, mgk_synack_t* res, const byte* err);
 void handle_msg(yami_ctx_t* ctx, yami_resp_t* resp, byte* buf);
 /** End prototypes for internal procedures **/
@@ -110,7 +118,7 @@ const char* yami_strversion()
 
 int yami_getcontextsize() 
 {
-  return( sizeof(yami_ctx_t) );
+  return( sizeof(yami_ctx_t) + yami__pegasusctxsize );
 }
 
 int yami_init(yami_conf_t* config)
@@ -123,7 +131,8 @@ int yami_init(yami_conf_t* config)
                              config->certificate_size);
   if (!bio)
     goto cleanup_ossl;
-  
+ 
+  yami__pegasusctxsize = pegasus_getcontextsize();
   yami__servercert = NULL;
   PEM_read_bio_RSAPrivateKey(bio, &yami__servercert, NULL,
                              (void*)config->certificate_passphrase);
@@ -168,9 +177,19 @@ length_t yami_get_tunnel_headlen()
   return( sizeof(mgk_header_t) );
 }
 
-void yami_new_ctx(yami_ctx_t* ctx)
+int yami_new_ctx(yami_ctx_t* ctx)
 {
   ctx->state = MGS_WAITING_SYN;
+  ctx->has_pegasus_ctx = 0;
+  return( 0 );
+}
+
+void yami_destroy_ctx(yami_ctx_t* ctx)
+{
+  if (ctx->has_pegasus_ctx) {
+    pegasus_ctx_t* pctx = YAMI_CPEGASUS(ctx);
+    pegasus_destroy_ctx(pctx);
+  }
 }
 
 yami_resp_t yami_incoming(yami_ctx_t* ctx, byte* buffer, length_t length)
@@ -197,9 +216,17 @@ yami_resp_t yami_incoming(yami_ctx_t* ctx, byte* buffer, length_t length)
       break;
       
     case magic_ack:
-      if (ctx->state == MGS_WAITING_ACK)
+      if (ctx->state == MGS_WAITING_ACK) {
         handle_ack(ctx, &resp, buffer);
-      else {
+        if (!resp.end_connection) {
+          yami_pegasus_payload_t payload;
+          memcpy(payload.token, ctx->x.ackr.token->token, MEGAKI_TOKEN_BYTES);
+
+          if (on_connect_successful(ctx, (byte*) &payload) != 0) {
+            goto kill_connection;
+          }
+        }
+      } else {
         YAMI_DIAGLOGS("Unexpected ACK packet");
         goto kill_connection;
       }
@@ -267,11 +294,6 @@ void yami_destroy()
   RSA_free(yami__servercert);
   ERR_free_strings();
   tokshutdown();
-}
-
-void yami_destroy_ctx(yami_ctx_t* ctx)
-{
-  
 }
 
 /** End Yami public interface **/
@@ -555,4 +577,15 @@ kill_connection:
   resp->end_connection = 1;
 }
   
+int on_connect_successful(yami_ctx_t* ctx, byte* ctxdata)
+{
+  pegasus_ctx_t* pctx = YAMI_CPEGASUS(ctx);
+  if (pegasus_new_ctx(pctx, ctxdata) != 0)
+    goto failure;
+
+  return( 0 );
+
+failure:
+  return( -1 );
+}
 /** End Yami internal procedures **/

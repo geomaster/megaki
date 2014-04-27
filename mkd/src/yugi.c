@@ -326,6 +326,7 @@ void yugi_cleanup(yugi_t* yc)
   YUGI_LOGS(LOG_NOTICE, "Pruning leftover connections...");
   conn_node_t *c, *cn;
   for (c = yc->connections; c; c = cn) {
+    yami_destroy_ctx(YUGI_CYAMI(c));
     cn = c->next;
     free(c->cptr);
     free(c);
@@ -401,11 +402,15 @@ void on_client_connect(uv_stream_t* server, int status)
     goto close_client;
   }
   
-  yami_new_ctx(YUGI_CYAMI(conn));
+  if (yami_new_ctx(YUGI_CYAMI(conn)) != 0) {
+    YUGI_LOGS(LOG_ERROR, "Failed to initialize Yami context");
+    goto dealloc_connection;
+  }
+
   conn_node_t* cnode = (conn_node_t*) malloc(sizeof( conn_node_t ));
   if (!conn) {
     YUGI_LOGS(LOG_ERROR, "Failed to allocate memory for connection node, dropping");
-    goto dealloc_connection;
+    goto destroy_yami;
   }
   
   cnode->cptr = conn;
@@ -426,7 +431,7 @@ void on_client_connect(uv_stream_t* server, int status)
     goto dealloc_connection_node;
   }
 
-  if (!pthread_mutex_init(&conn->refmut, 0)) {
+  if (pthread_mutex_init(&conn->refmut, 0) != 0) {
     YUGI_LOGS(LOG_WARNING, "Failed to init mutex, dropping");
     goto destroy_semaphore;
   }
@@ -484,13 +489,14 @@ destroy_semaphore:
 dealloc_connection_node:
   free(cnode);
   
+destroy_yami:
+  yami_destroy_ctx(YUGI_CYAMI(conn));
+
 dealloc_connection:
   free(conn);
-  
+
 close_client:
-  uv_close((uv_handle_t*) client, &on_premature_close);
-  /* skip deallocation here because on_premature_close will do it when
-   * the time is right. note the spaghetti */
+  uv_close((uv_handle_t*) client, &on_premature_close); /* skip deallocation here because on_premature_close will do it when * the time is right. note the spaghetti */
   goto failure;
         
 dealloc_client:
@@ -735,7 +741,7 @@ void on_data_read(uv_stream_t* stream, ssize_t nread, const uv_buf_t* buf)
   return ;
   
 unlock_mut:
-  sem_post(&c->recvmut);
+  YUGI_NONFAIL(sem_post(&c->recvmut) == 0);
 
 close_conn:
   if (close_connection(c) != 0) {
@@ -791,6 +797,7 @@ int close_connection(conn_t* c)
   yugi_t* yc = c->parent;
  
   YUGI_LOGCONNS(c, "Closing connection");
+  yami_destroy_ctx(YUGI_CYAMI(c));
   kill_timeout_timer(c);
 
   --yc->connection_count;

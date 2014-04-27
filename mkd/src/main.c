@@ -41,7 +41,8 @@ int main(int argc, char** argv)
     .minion_pool_size = 25,
     .log_level = LOG_DEBUG2,
     .log_file = stderr,
-    .lock_timeout = 10
+    .lock_timeout = 10,
+    .message_timeout = { .tv_sec = 4, .tv_usec = 0 }
   };
   if (pegasus_init(&pconf) != 0) {
     fprintf(stderr, "Pegasus did not start up\n");
@@ -80,6 +81,8 @@ int main(int argc, char** argv)
   yugi_start(yugi);
   yugi_cleanup(yugi);
   yami_destroy();
+  pegasus_cleanup();
+
   free(yugi);
   return(0);
 }

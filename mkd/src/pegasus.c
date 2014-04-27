@@ -142,6 +142,11 @@ int pegasus_init(pegasus_conf_t* config)
   if (prefork_minions(config->minion_pool_size) != 0)
    goto destroy_sem;
 
+  int i;
+  for (i = 0; i < config->minion_pool_size; ++i)
+    pegasus__mq[i] = &pegasus__minions[i];
+  pegasus__mqsz = config->minion_pool_size;
+
   return( 0 );
 
 destroy_sem:
@@ -204,6 +209,10 @@ recreate_minion:
     }
     PEGASUS_LOGS(LOG_ERROR, "Could not recreate this minion! Resource "
         "depletion may occur without any way to countermand it");
+    /*
+     * - Self-destruct cannot be countermanded!
+     * - I'm not looking for a countermand, dear... I'm looking for reverse.
+     */
   } else {
     PEGASUS_LOGS(LOG_NOTICE, "Minion resurrected successfully");
   }
@@ -214,6 +223,7 @@ release_minion:
   PEGASUS_NONFAIL(pthread_mutex_lock(&pegasus__mqmut) == 0);
   pegasus__mq[pegasus__mqsz++] = minion;
   PEGASUS_NONFAIL(pthread_mutex_unlock(&pegasus__mqmut) == 0);
+  PEGASUS_NONFAIL(sem_post(&pegasus__mqsem) == 0);
 
 failure:
   return( -1 );
@@ -225,7 +235,19 @@ void pegasus_destroy_ctx(pegasus_ctx_t* ctx)
   PEGASUS_NONFAIL(pthread_mutex_lock(&pegasus__mqmut) == 0);
   pegasus__mq[pegasus__mqsz++] = ctx->minion;
   PEGASUS_NONFAIL(pthread_mutex_unlock(&pegasus__mqmut) == 0);
-  PEGASUS_NONFAIL(sem_post(&pegasus__mqsem));
+  PEGASUS_NONFAIL(sem_post(&pegasus__mqsem) == 0);
+}
+
+void pegasus_cleanup()
+{
+  int i;
+  for (i = 0; i < pegasus__config.minion_pool_size; ++i) {
+    pid_t pid = pegasus__minions[i].pid;
+    smite_minion(&pegasus__minions[i]);
+
+    int dummy;
+    waitpid(pid, &dummy, 0);
+  }
 }
 
 int prefork_minion(pegasus_minion_t* min)
@@ -280,7 +302,6 @@ void smite_minion(pegasus_minion_t* min)
     return;
   close(min->fds[0]);
   close(min->fds[1]);
-  waitpid(min->pid, NULL, 0);
 }
 
 int prefork_minions(int count)
@@ -395,7 +416,7 @@ int minion_init(pegasus_minion_t* min, byte* mindata)
   }
 
   PEGASUS_LOGF(LOG_DEBUG2, "Minion %ld awakened to serve request (GUID=%" 
-      PRIu64 ")", (long) min->pid, (uint64_t) min->guid.data);
+      PRIu64 ")", (long) min->pid, * (uint64_t*) &min->guid.data);
   return( 0 );
 }
 
@@ -403,10 +424,24 @@ int read_packet(int fd, byte* buffer, length_t packetlen)
 {
   length_t pread = 0;
   slength_t this_read = 0;
-  while (pread < packetlen &&
-         (this_read = read(fd, buffer + pread, packetlen - pread)) > 0)
+  int selret;
+
+  struct timeval tv;
+  fd_set fds;
+
+  do {
     pread += this_read;
-  
+
+    FD_ZERO(&fds);
+    FD_SET(fd, &fds);
+    tv = pegasus__config.message_timeout;
+
+    selret = select(fd + 1, &fds, NULL, NULL, &tv);
+    if (selret <= 0)
+      return( 0 ); /* timed out or error ocurred */
+
+    this_read = read(fd, buffer + pread, packetlen - pread);
+  } while (pread < packetlen && this_read > 0);
   return (pread == packetlen);
 }
 

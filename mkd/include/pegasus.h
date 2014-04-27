@@ -1,7 +1,7 @@
 #ifndef __PEGASUS_H__
 #define __PEGASUS_H__
 #include "common.h"
-#include <time.h>
+#include <sys/time.h>
 #include <stdio.h>
 
 /* Is this a debug build? */
@@ -40,6 +40,9 @@ typedef struct pegasus_conf_t {
 
   /*** Maximum seconds to wait on semaphore locks ***/
   int                     lock_timeout;
+
+  /*** Maximum time to wait on minion responses ***/
+  struct timeval          message_timeout;
 
   /** End configuration options for MKD Pegasus **/
 } pegasus_conf_t;
