@@ -487,6 +487,7 @@ destroy_semaphore:
   sem_destroy(&conn->recvmut);
 
 dealloc_connection_node:
+  yc->connections = cnode->prev;
   free(cnode);
   
 destroy_yami:
