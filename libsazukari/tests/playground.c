@@ -61,7 +61,7 @@ int main(int argc, char** argv)
     printf("success!\n");
     char msg[] = "hello world!";
     szkr_send_message(ctx, msg, sizeof(msg) - 1, NULL, NULL);
-    while(1);
+    while(1){sleep(10);}
   }
 
   return(0);

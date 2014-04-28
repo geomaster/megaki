@@ -6,9 +6,10 @@ do
   # HALT
 	for ((i=0;i<2500;++i))
 	do
-    nc 127.0.0.1 6363 < $DIR/../data/example-syn.bin > /dev/null &
+echo none
+#   nc 127.0.0.1 6363 < $DIR/../data/example-syn.bin > /dev/null &
 	done
-	sleep 5
+#	sleep 5
 
   # HAMMERZEIT!
 	for ((i=0;i<30;++i))

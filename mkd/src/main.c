@@ -5,6 +5,7 @@
 #include "pegasus.h"
 #include <malloc.h>
 #include <signal.h>
+#include "pmdk.h"
 yugi_t* yugi;
 
 void handle_signal(int sig)
@@ -17,11 +18,25 @@ int writecb(byte* buf, length_t len, void* pam)
   printf("What are you doing honey...? I'm not ready y-y-yet... Yamette kure!\n");
   return 0;
 }
+#include <assert.h>
+
 int broker(void* param)
 {
   fprintf(stderr, "Err... I'm the broker... Or something... This is embarrassing.\n");
   fflush(stderr);
-  while (1) sleep(10) ;
+  while (1)  {
+    pegasus_resp_hdr_t resp;
+    pegasus_req_hdr_t req;
+    pegasus_start_req_t sreq;
+    assert(read(STDIN_FILENO, &req, sizeof(pegasus_req_hdr_t)) == sizeof(pegasus_req_hdr_t));
+    int st=sizeof(pegasus_quit_req_t);
+ if(req.type==PEGASUS_REQ_START) {   byte dump[1000];
+   assert(read(STDIN_FILENO,dump,4)==4);st=sizeof(pegasus_start_req_t);}
+    assert(read(STDIN_FILENO, &sreq, st) == st);if(req.type==PEGASUS_REQ_START)fprintf(stderr, "Broker starts!\n");
+    else fprintf(stderr, "Broker quits!\n");
+    resp.type =(req.type==PEGASUS_REQ_START? PEGASUS_RESP_START_OK : PEGASUS_RESP_QUIT_OK);
+    assert(write(STDOUT_FILENO, &resp, sizeof(pegasus_resp_hdr_t)) == sizeof(pegasus_resp_hdr_t));
+  }
 }
 
 byte cert[1766];
@@ -42,7 +57,7 @@ int main(int argc, char** argv)
     .log_level = LOG_DEBUG2,
     .log_file = stderr,
     .lock_timeout = 10,
-    .message_timeout = { .tv_sec = 4, .tv_usec = 0 }
+    .message_timeout = { .tv_sec = 1, .tv_usec = 0 }
   };
   if (pegasus_init(&pconf) != 0) {
     fprintf(stderr, "Pegasus did not start up\n");
@@ -71,7 +86,7 @@ int main(int argc, char** argv)
     .queue_size = 2000,
     .log_file = stderr,
     .log_level = LOG_DEBUG2,
-    .receive_timeout = 1000000,
+    .receive_timeout = 6000,
     .buffer_length = 16384,
     .socket_backlog = 50,
     .watchdog_interval = 5000,

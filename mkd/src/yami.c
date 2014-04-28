@@ -582,6 +582,7 @@ int on_connect_successful(yami_ctx_t* ctx, byte* ctxdata)
   pegasus_ctx_t* pctx = YAMI_CPEGASUS(ctx);
   if (pegasus_new_ctx(pctx, ctxdata) != 0)
     goto failure;
+  ctx->has_pegasus_ctx = 1;
 
   return( 0 );
 

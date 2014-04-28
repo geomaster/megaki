@@ -196,6 +196,7 @@ int pegasus_new_ctx(pegasus_ctx_t* ctx, byte* ctxdata)
     goto release_minion;
   }
 
+  ctx->minion = minion;
   PEGASUS_LOGS(LOG_DEBUG1, "Context created!");
   return( 0 );
 
@@ -430,8 +431,6 @@ int read_packet(int fd, byte* buffer, length_t packetlen)
   fd_set fds;
 
   do {
-    pread += this_read;
-
     FD_ZERO(&fds);
     FD_SET(fd, &fds);
     tv = pegasus__config.message_timeout;
@@ -441,7 +440,7 @@ int read_packet(int fd, byte* buffer, length_t packetlen)
       return( 0 ); /* timed out or error ocurred */
 
     this_read = read(fd, buffer + pread, packetlen - pread);
-  } while (pread < packetlen && this_read > 0);
+  } while (this_read > 0 && (pread += this_read) < packetlen);
   return (pread == packetlen);
 }
 
