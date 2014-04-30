@@ -33,7 +33,7 @@
 #define YAMI_CPEGASUS(ctx) \
   (pegasus_ctx_t*)((byte*) ctx + sizeof(yami_ctx_t))
 
-#define YAMI_DIAGNOSTIC
+/* #define YAMI_DIAGNOSTIC */
 
 /** Internal structures for MKD Yami **/
 typedef struct yami_ctx_t {

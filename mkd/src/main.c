@@ -22,21 +22,45 @@ int writecb(byte* buf, length_t len, void* pam)
 
 int broker(void* param)
 {
-  fprintf(stderr, "Err... I'm the broker... Or something... This is embarrassing.\n");
+  signal(SIGINT, SIG_IGN);
+  signal(SIGPIPE, SIG_IGN);
+  
+  fprintf(stderr, "Broker starts\n");
   fflush(stderr);
   while (1)  {
-    pegasus_resp_hdr_t resp;
     pegasus_req_hdr_t req;
-    pegasus_start_req_t sreq;
-    assert(read(STDIN_FILENO, &req, sizeof(pegasus_req_hdr_t)) == sizeof(pegasus_req_hdr_t));
-    int st=sizeof(pegasus_quit_req_t);
- if(req.type==PEGASUS_REQ_START) {   byte dump[1000];
-   assert(read(STDIN_FILENO,dump,4)==4);st=sizeof(pegasus_start_req_t);}
-    assert(read(STDIN_FILENO, &sreq, st) == st);if(req.type==PEGASUS_REQ_START)fprintf(stderr, "Broker starts!\n");
-    else fprintf(stderr, "Broker quits!\n");
-    resp.type =(req.type==PEGASUS_REQ_START? PEGASUS_RESP_START_OK : PEGASUS_RESP_QUIT_OK);
-    assert(write(STDOUT_FILENO, &resp, sizeof(pegasus_resp_hdr_t)) == sizeof(pegasus_resp_hdr_t));
+    if (read(STDIN_FILENO, &req, sizeof(pegasus_req_hdr_t)) != sizeof(pegasus_req_hdr_t))
+      goto die;
+
+    pegasus_resp_hdr_t rsphdr;
+    if (req.type == PEGASUS_REQ_START) {
+      pegasus_start_req_t streq;
+      if (read(STDIN_FILENO, &streq, sizeof(pegasus_start_req_t)) != sizeof(pegasus_start_req_t))
+        goto die;
+
+      byte platipus[ 2000 ];
+      assert(streq.datasize < 2000);
+      if (read(STDIN_FILENO, platipus, streq.datasize) != streq.datasize)
+        goto die;
+
+      fprintf(stderr, "Broker allocated for job!\n");
+      rsphdr.type = PEGASUS_RESP_START_OK;
+    } else if (req.type == PEGASUS_REQ_QUIT) {
+      pegasus_quit_req_t qreq;
+      if (read(STDIN_FILENO, &qreq, sizeof(pegasus_quit_req_t)) != sizeof(pegasus_quit_req_t))
+        goto die;
+
+      fprintf(stderr, "Broker decommissioned for the job\n");
+      rsphdr.type = PEGASUS_RESP_QUIT_OK;
+
+    }
+    write(STDOUT_FILENO, &rsphdr, sizeof(pegasus_resp_hdr_t));
   }
+
+die:
+  fprintf(stderr, "Broker dead for some reason");
+  fflush(stderr);
+  return( 0 );
 }
 
 byte cert[1766];
@@ -47,6 +71,7 @@ int main(int argc, char** argv)
   FILE * f = fopen("server-private.pem", "r");
   fread(cert, 1766, 1, f);
   fclose(f);
+  signal(SIGPIPE, SIG_IGN);
   
   pegasus_conf_t pconf = {
     .write_cb = &writecb,
@@ -54,7 +79,7 @@ int main(int argc, char** argv)
     .start_broker_cb_param = NULL,
     .context_data_length = 4,
     .minion_pool_size = 25,
-    .log_level = LOG_DEBUG2,
+    .log_level = LOG_NOTICE,
     .log_file = stderr,
     .lock_timeout = 10,
     .message_timeout = { .tv_sec = 1, .tv_usec = 0 }
@@ -82,11 +107,11 @@ int main(int argc, char** argv)
   yugi_conf_t conf = {
     .listen_address = "127.0.0.1",
     .listen_port = 6363,
-    .thread_count = 2,
+    .thread_count = 20,
     .queue_size = 2000,
     .log_file = stderr,
-    .log_level = LOG_DEBUG2,
-    .receive_timeout = 6000,
+    .log_level = LOG_NOTICE,
+    .receive_timeout = 60000,
     .buffer_length = 16384,
     .socket_backlog = 50,
     .watchdog_interval = 5000,

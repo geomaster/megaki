@@ -302,6 +302,8 @@ failure:
 
 void yugi_stop(yugi_t* yc)
 {
+  if (yc->killswitch) return;
+
   YUGI_LOGS(LOG_NOTICE, "Stopping Yugi...");
   yc->killswitch = 1;
 }
@@ -311,9 +313,12 @@ void yugi_cleanup(yugi_t* yc)
   int res;  
   YUGI_LOGS(LOG_NOTICE, "Cleaning up Yugi context");
   
-  YUGI_LOGS(LOG_NOTICE, "Destroying threadpool");
-  threadpool_destroy(yc->pool, 0);
-  
+  if (yc->pool) {
+    YUGI_LOGS(LOG_NOTICE, "Destroying threadpool");
+    threadpool_destroy(yc->pool, threadpool_graceful);
+    yc->pool = NULL;
+  }
+
   YUGI_LOGS(LOG_NOTICE, "Closing main loop");
   if ((res = uv_loop_close(yc->uv_loop)) != 0) {
     YUGI_LOGF(LOG_WARNING, "Could not close main loop! (%s)", uv_strerror(res));
@@ -326,7 +331,7 @@ void yugi_cleanup(yugi_t* yc)
   YUGI_LOGS(LOG_NOTICE, "Pruning leftover connections...");
   conn_node_t *c, *cn;
   for (c = yc->connections; c; c = cn) {
-    yami_destroy_ctx(YUGI_CYAMI(c));
+    yami_destroy_ctx(YUGI_CYAMI(c->cptr));
     cn = c->next;
     free(c->cptr);
     free(c);
@@ -548,9 +553,7 @@ void grab_connection(conn_t* c)
 
 void release_connection(conn_t* c)
 {
-  #ifdef YUGI_DEBUG
   yugi_t* yc = c->parent;
-  #endif
   
   YUGI_ASSERT(c->refcount >= 1, "This connection has already been destroyed "
                                 "which indicates a bug");
@@ -842,7 +845,8 @@ void walk_and_destroy(uv_handle_t* handle, void* arg)
   #endif
   
   if (handle != (uv_handle_t*) &yc->uv_servconn &&
-      !(handle->type == UV_TIMER && (uv_timer_t*) handle == &((conn_t*)handle->data)->timeout_tmr)) {    
+      !(handle->type == UV_TIMER && (uv_timer_t*) handle == &((conn_t*)handle->data)->timeout_tmr) &&
+      !uv_is_closing(handle)) {    
     uv_close(handle, &on_close_generic_handle);
   } else {
     uv_close(handle, NULL);
@@ -854,6 +858,13 @@ void on_watchdog_tick(uv_timer_t* tmr)
   yugi_t* yc = (yugi_t*) tmr->data;
   if (yc->killswitch) {
     yc->killswitch = 0;
+
+    if (yc->pool) {
+      YUGI_LOGS(LOG_NOTICE, "Destroying threadpool");
+      threadpool_destroy(yc->pool, threadpool_graceful);
+      yc->pool = NULL;
+    }
+
     YUGI_LOGS(LOG_NOTICE, "WATCHDOG: Destroying handles...");
     uv_walk(yc->uv_loop, &walk_and_destroy, yc);
     YUGI_LOGS(LOG_NOTICE, "WATCHDOG: Handles destroyed");  
