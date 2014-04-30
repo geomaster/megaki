@@ -184,8 +184,12 @@ int pegasus_new_ctx(pegasus_ctx_t* ctx, byte* ctxdata)
   }
   PEGASUS_NONFAIL(pthread_mutex_lock(&pegasus__mqmut) == 0);
 
-  PEGASUS_ASSERT(pegasus__mqsz > 0, "Since we managed to wait on the "
-      "semaphore, there should be at least one free worker");
+  if (pegasus__mqsz <= 0) {
+    PEGASUS_LOGS(LOG_ERROR, "Since we managed to wait on the semaphore, there "
+        "should be at least one free worker! (Failure, cannot create context)");
+    goto failure;
+  }
+
   pegasus_minion_t* minion = pegasus__mq[--pegasus__mqsz];
   PEGASUS_NONFAIL(pthread_mutex_unlock(&pegasus__mqmut) == 0);
 
