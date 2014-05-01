@@ -93,23 +93,24 @@ typedef struct yugi_t {
 } yugi_t;
 
 typedef struct conn_t {
-  uv_stream_t       *stream;
-  byte              recvbuf[ YUGI_MAX_MESSAGE_LENGTH ],
-                    sndbuf [ YUGI_MAX_MESSAGE_LENGTH ],
-                    is_closed,
-                    is_timed,
-                    kill_after_write;
-  pthread_mutex_t   refmut;
-  sem_t             recvmut;
-  int               recvlen,
-                    sndlen,
-                    refcount,
-                    tunnelheadlen,
-                    expectlen,
-                    schedexpectlen;
-  yugi_t            *parent;
-  conn_node_t       *node;
-  uv_timer_t        timeout_tmr;
+  uv_stream_t         *stream;
+  byte                recvbuf[ YUGI_MAX_MESSAGE_LENGTH ],
+                      sndbuf [ YUGI_MAX_MESSAGE_LENGTH ],
+                      is_closed,
+                      is_timed,
+                      kill_after_write;
+  pthread_mutex_t     refmut;
+  struct sockaddr_in  addr;
+  sem_t               recvmut;
+  int                 recvlen,
+                      sndlen,
+                      refcount,
+                      tunnelheadlen,
+                      expectlen,
+                      schedexpectlen;
+  yugi_t              *parent;
+  conn_node_t         *node;
+  uv_timer_t          timeout_tmr;
   
   #ifdef YUGI_DEBUG
   char              dbg_id[ 10 ];
@@ -406,8 +407,14 @@ void on_client_connect(uv_stream_t* server, int status)
     YUGI_LOGS(LOG_ERROR, "Failed to allocate memory for connection, dropping");
     goto close_client;
   }
+  memset(&conn->addr, 0, sizeof(struct sockaddr_in));
+  int len = sizeof(struct sockaddr_in);
+  uv_tcp_getpeername(client, (struct sockaddr*) &conn->addr, &len);
   
-  if (yami_new_ctx(YUGI_CYAMI(conn)) != 0) {
+  yami_yugi_payload_t yamip;
+  yamip.ip = conn->addr;
+
+  if (yami_new_ctx(YUGI_CYAMI(conn), yamip) != 0) {
     YUGI_LOGS(LOG_ERROR, "Failed to initialize Yami context");
     goto dealloc_connection;
   }

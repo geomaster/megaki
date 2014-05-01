@@ -45,11 +45,12 @@
 typedef struct pegasus_minion_t {
   int             fds[2];
   pid_t           pid;
-  pegasus_guid_t  guid;
+  int             is_unstable;
 } pegasus_minion_t;
 
 typedef struct pegasus_ctx_t {
   pegasus_minion_t* minion;
+  pegasus_guid_t  guid;
 } pegasus_ctx_t;
 
 /** End internal structures for MKD Pegasus **/
@@ -68,11 +69,11 @@ uint64_t           pegasus__guid;
 
 /** Start internal functions **/
 int prefork_minions(int count);
-int minion_init(pegasus_minion_t* min, byte* mindata);
+int minion_init(pegasus_minion_t* min, byte* mindata, pegasus_guid_t* opguid);
 void broker_surrogate(pid_t mypid, int me2master[2], int master2me[2]);
-void minion_destroy(pegasus_minion_t* min);
+void minion_destroy(pegasus_minion_t* min, pegasus_guid_t guid);
 int read_packet(int fd, byte* buffer, length_t packetlen);
-int write_packet(int fd, byte* buffer, length_t packetlen);
+int write_packet(int fd, const byte* buffer, length_t packetlen);
 int prefork_minion(pegasus_minion_t* min);
 void smite_minion(pegasus_minion_t* min);
 /** End internal functions **/
@@ -102,8 +103,7 @@ int pegasus_getcontextsize()
 
 int pegasus_init(pegasus_conf_t* config)
 {
-  if (config->write_cb == NULL || 
-      config->start_broker_cb == NULL ||
+  if (config->start_broker_cb == NULL ||
       config->minion_pool_size <= 0 ||
       (config->log_level < LOG_QUIET && !config->log_file))
     goto failure;
@@ -193,7 +193,7 @@ int pegasus_new_ctx(pegasus_ctx_t* ctx, byte* ctxdata)
   pegasus_minion_t* minion = pegasus__mq[--pegasus__mqsz];
   PEGASUS_NONFAIL(pthread_mutex_unlock(&pegasus__mqmut) == 0);
 
-  int res = minion_init(minion, ctxdata);
+  int res = minion_init(minion, ctxdata, &ctx->guid);
   if (res == -2) { /* minion in unstable state */
     goto recreate_minion;
   } else if (res == -1) { /* minion is stable but could not fullfill */
@@ -234,9 +234,70 @@ failure:
   return( -1 );
 }
 
+int pegasus_handle_message(pegasus_ctx_t* ctx, const byte* buf, length_t
+      msglen, byte* response, length_t *resplen)
+{
+  pegasus_minion_t* min = ctx->minion;
+  if (min->is_unstable) {
+    PEGASUS_LOGF(LOG_WARNING, "Minion %ld is unstable, refusing to serve!", (long) min->pid);
+    goto failure;
+  }
+
+  pegasus_req_hdr_t reqhdr;
+  reqhdr.type = PEGASUS_REQ_HANDLE;
+
+  pegasus_handle_req_t hreq;
+  memcpy(hreq.guid.data, ctx->guid.data, sizeof(pegasus_guid_t));
+  hreq.msgsize = msglen;
+  hreq.maxrespsize = *resplen;
+  
+  if (!write_packet(min->fds[1], (byte*) &reqhdr, sizeof(pegasus_req_hdr_t)) ||
+      !write_packet(min->fds[1], (byte*) &hreq, sizeof(pegasus_handle_req_t)) ||
+      !write_packet(min->fds[1], buf, msglen)) {
+    PEGASUS_LOGF(LOG_ERROR, "Unable to write handle request to minion %ld, unstable state, further calls will fail", (long) min->pid);
+    goto set_unstable;
+  }
+
+  pegasus_resp_hdr_t resphdr;
+  pegasus_handle_resp_t hresp;
+
+  if (!read_packet(min->fds[0], (byte*) &resphdr, sizeof(pegasus_resp_hdr_t))) {
+    PEGASUS_LOGF(LOG_WARNING, "Unable to read handle response header from minion %ld, unstable state, further calls will fail", (long) min->pid);
+    goto set_unstable;
+  }
+
+  if (resphdr.type != PEGASUS_RESP_HANDLE_OK) {
+    PEGASUS_LOGF(LOG_WARNING, "Minion %ld failed to serve request", (long)min->pid);
+    goto failure;
+  }
+
+  if (!read_packet(min->fds[0], (byte*) &hresp, sizeof(pegasus_handle_resp_t))) {
+    PEGASUS_LOGF(LOG_WARNING, "Unable to read handle response from minion %ld, unstable state, further calls will fail", (long) min->pid);
+    goto set_unstable;
+  }
+  if (hresp.respsize > *resplen) {
+    PEGASUS_LOGS(LOG_WARNING, "Response from minion too long, failing");
+    goto failure;
+  }
+  *resplen = hresp.respsize;
+
+  if (!read_packet(min->fds[0], response, hresp.respsize)) {
+    PEGASUS_LOGF(LOG_WARNING, "Unable to read response data from minion %ld, unstable state, further calls will fail", (long) min->pid);
+    goto set_unstable;
+  }
+fprintf(stderr,"resp is %d\n", (int)*resplen);
+  return( 0 );
+
+set_unstable:
+  min->is_unstable = 1;
+
+failure:
+  return( -1 );
+}
+
 void pegasus_destroy_ctx(pegasus_ctx_t* ctx)
 {
-  minion_destroy(ctx->minion);
+  minion_destroy(ctx->minion, ctx->guid);
   PEGASUS_NONFAIL(pthread_mutex_lock(&pegasus__mqmut) == 0);
   pegasus__mq[pegasus__mqsz++] = ctx->minion;
   PEGASUS_NONFAIL(pthread_mutex_unlock(&pegasus__mqmut) == 0);
@@ -291,7 +352,7 @@ int prefork_minion(pegasus_minion_t* min)
 
     int err = -3;
     /* broker_surrogate writes an integer indicating if everything
-     * went right, so we read it here */int rd;
+     * went right, so we read it here */
     if (read(minionwrite[0], &err, sizeof(int)) != sizeof(int) ||
         err != 0) {
       PEGASUS_LOGF(LOG_ERROR, "Minion reported failure (err=%d)", err);
@@ -361,17 +422,20 @@ void broker_surrogate(pid_t mypid, int me2master[2], int master2me[2])
   }
 }
 
-void minion_destroy(pegasus_minion_t* min)
+void minion_destroy(pegasus_minion_t* min, pegasus_guid_t guid)
 {
+  if (min->is_unstable)
+    return ;
   pegasus_req_hdr_t hdr;
   pegasus_quit_req_t req;
   hdr.type = PEGASUS_REQ_QUIT;
-  memcpy(req.guid.data, min->guid.data, PEGASUS_GUID_BYTES);
+  memcpy(req.guid.data, guid.data, PEGASUS_GUID_BYTES);
 
   if (!write_packet(min->fds[1], (byte*) &hdr, sizeof(pegasus_req_hdr_t)) ||
       !write_packet(min->fds[1], (byte*) &req, sizeof(pegasus_quit_req_t))) {
     PEGASUS_LOGF(LOG_WARNING, "Failed to send quit request to minion %ld, "
         "a subsequent init will fail", (long) min->pid);
+    min->is_unstable = 1;
     return ;
   }
 
@@ -379,6 +443,7 @@ void minion_destroy(pegasus_minion_t* min)
   if (!read_packet(min->fds[0], (byte*) &resphdr, sizeof(pegasus_resp_hdr_t))) {
     PEGASUS_LOGF(LOG_WARNING, "Failed to read quit response from minion %ld",
         (long) min->pid);
+    min->is_unstable = 1;
     return ;
   }
 
@@ -387,8 +452,13 @@ void minion_destroy(pegasus_minion_t* min)
         "minion %ld, a subsequent init may fail", (long) min->pid);
 }
 
-int minion_init(pegasus_minion_t* min, byte* mindata)
+int minion_init(pegasus_minion_t* min, byte* mindata, pegasus_guid_t* opguid)
 {
+  if (min->is_unstable) {
+    PEGASUS_LOGF(LOG_WARNING, "Minion %ld is unstable, refusing to init!", (long) min->pid);
+    return( -2 );
+  }
+
   pegasus_req_hdr_t hdr;
   pegasus_start_req_t req;
   hdr.type = PEGASUS_REQ_START;
@@ -396,7 +466,7 @@ int minion_init(pegasus_minion_t* min, byte* mindata)
 
   PEGASUS_NONFAIL(pthread_mutex_lock(&pegasus__guidmut) == 0);
   memcpy(req.guid.data, &pegasus__guid, PEGASUS_GUID_BYTES);
-  memcpy(min->guid.data, &pegasus__guid, PEGASUS_GUID_BYTES);
+  memcpy(opguid->data, &pegasus__guid, PEGASUS_GUID_BYTES);
   ++pegasus__guid;
   PEGASUS_NONFAIL(pthread_mutex_unlock(&pegasus__guidmut) == 0);
 
@@ -419,9 +489,14 @@ int minion_init(pegasus_minion_t* min, byte* mindata)
     PEGASUS_LOGF(LOG_WARNING, "Start failed on minion %ld", (long) min->pid);
     return( -1 );
   }
+  union {
+    uint64_t u64;
+    pegasus_guid_t guid;
+  } guidcast;
+  guidcast.guid = *opguid;
 
-  PEGASUS_LOGF(LOG_DEBUG2, "Minion %ld awakened to serve request (GUID=%" 
-      PRIu64 ")", (long) min->pid, * (uint64_t*) &min->guid.data);
+  PEGASUS_LOGF(LOG_DEBUG1, "Minion %ld awakened to serve request (GUID=%" 
+      PRIu64 ")", (long) min->pid, guidcast.u64);
   return( 0 );
 }
 
@@ -448,7 +523,7 @@ int read_packet(int fd, byte* buffer, length_t packetlen)
   return (pread == packetlen);
 }
 
-int write_packet(int fd, byte* buffer, length_t packetlen)
+int write_packet(int fd, const byte* buffer, length_t packetlen)
 {
   return (write(fd, buffer, packetlen) == packetlen);
 }  

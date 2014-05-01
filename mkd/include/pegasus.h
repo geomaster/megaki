@@ -10,15 +10,11 @@
 #endif
 
 /** Typedefs for MKD Pegasus **/
-typedef int (*pegasus_write_cb)(byte* buffer, length_t len, void* param);
 typedef int (*pegasus_start_broker_cb)(void* param);
 /** End typedefs for MKD Pegasus **/
 
 typedef struct pegasus_conf_t {
   /*** Configuration options for MKD Pegasus ***/
-
-  /*** Callback to write responses when ready ***/
-  pegasus_write_cb        write_cb;
 
   /*** Callback to start a message broker in the current process ***/
   pegasus_start_broker_cb start_broker_cb;
@@ -56,8 +52,8 @@ const char* pegasus_strversion();
 int         pegasus_getcontextsize();
 int         pegasus_init(pegasus_conf_t* config);
 int         pegasus_new_ctx(pegasus_ctx_t* ctx, byte* ctxdata);
-int         pegasus_queue_handle_message(pegasus_ctx_t* ctx, byte* buf, 
-              length_t msglen, void* param);
+int         pegasus_handle_message(pegasus_ctx_t* ctx, const byte* buf, 
+              length_t msglen, byte* response, length_t* resplen);
 void        pegasus_destroy_ctx(pegasus_ctx_t* ctx);
 void        pegasus_cleanup();
 /** End public functions for MKD Pegasus **/

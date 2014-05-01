@@ -36,8 +36,8 @@ typedef struct pk pegasus_guid_t {
 
 /* Payload sent by Yami: Megaki token and IP address forwarded from Yugi */
 typedef struct pk pegasus_yami_payload_t {
-  struct in_addr client_ip;
-  mgk_token_t    megaki_token;
+  struct sockaddr_in  client_ip;
+  mgk_token_t         megaki_token;
 } pegasus_yami_payload_t;
 
 /* Context start request, contains GUID & payload size which follows */
@@ -68,13 +68,16 @@ typedef struct pegasus_quit_resp_t {
  * message data follows */
 typedef struct pk pegasus_handle_req_t {
   pegasus_guid_t guid;
-  length_t       msgsize;
+  length_t       msgsize,
+                 maxrespsize;
   /* follows: message of msgsize bytes */
 } pegasus_handle_req_t;
 
-/* Message handle response, contains nothing (for now) */
+/* Message handle response, contains GUID and response size, while the response
+ * data follows */
 typedef struct pegasus_handle_resp_t {
-
+  length_t       respsize;
+  /* follows: response of respsize bytes */
 } pegasus_handle_resp_t;
 
 #endif // __PMDK_H__

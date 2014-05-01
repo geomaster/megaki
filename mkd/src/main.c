@@ -29,6 +29,7 @@ int broker(void* param)
   fflush(stderr);
   while (1)  {
     pegasus_req_hdr_t req;
+    pegasus_quit_resp_t resp;
     if (read(STDIN_FILENO, &req, sizeof(pegasus_req_hdr_t)) != sizeof(pegasus_req_hdr_t))
       goto die;
 
@@ -53,8 +54,30 @@ int broker(void* param)
       fprintf(stderr, "Broker decommissioned for the job\n");
       rsphdr.type = PEGASUS_RESP_QUIT_OK;
 
+    } else if (req.type == PEGASUS_REQ_HANDLE) {
+      pegasus_handle_req_t hreq;
+      if (read(STDIN_FILENO, &hreq, sizeof(pegasus_handle_req_t)) != sizeof(pegasus_handle_req_t))
+        goto die;
+
+      rsphdr.type = PEGASUS_RESP_HANDLE_OK;
+      byte ppp[ 2000 ];
+      assert(hreq.msgsize < 2000);
+      if (read(STDIN_FILENO, ppp, hreq.msgsize) != hreq.msgsize)
+        goto die;
+
+      fprintf(stderr, "Broker handling message: ");
+      fwrite(ppp, hreq.msgsize, 1, stderr);
+      fprintf(stderr, "\n");
     }
     write(STDOUT_FILENO, &rsphdr, sizeof(pegasus_resp_hdr_t));
+    if (rsphdr.type == PEGASUS_RESP_HANDLE_OK) {
+
+      pegasus_handle_resp_t hresp;
+      char response[] = "Broker says: hello!";
+      hresp.respsize = sizeof(response) - 1;
+      write(STDOUT_FILENO, &hresp, sizeof(hresp));
+      write(STDOUT_FILENO, response, sizeof(response) - 1);
+    }
   }
 
 die:
@@ -74,10 +97,9 @@ int main(int argc, char** argv)
   signal(SIGPIPE, SIG_IGN);
   
   pegasus_conf_t pconf = {
-    .write_cb = &writecb,
     .start_broker_cb = &broker,
     .start_broker_cb_param = NULL,
-    .context_data_length = 4,
+    .context_data_length = sizeof(pegasus_yami_payload_t),
     .minion_pool_size = 25,
     .log_level = LOG_NOTICE,
     .log_file = stderr,

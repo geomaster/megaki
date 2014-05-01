@@ -3,6 +3,7 @@
 #include "sslc.h"
 #include "tokenbank.h"
 #include "pegasus.h"
+#include "pmdk.h"
 #include <malloc.h>
 #include <string.h>
 #include <arpa/inet.h>
@@ -56,8 +57,14 @@ typedef struct yami_ctx_t {
     } ackr;
   } x;
 
-  int has_pegasus_ctx;
+  byte has_pegasus_ctx;
+  yami_pegasus_payload_t pgspl;
 } yami_ctx_t;
+
+typedef struct yami_buf_t {
+  byte* buf;
+  length_t* sz;
+} yami_buf_t;
 /** End internal structures for MKD Yami **/
 
 /** Debug macros **/
@@ -177,10 +184,11 @@ length_t yami_get_tunnel_headlen()
   return( sizeof(mgk_header_t) );
 }
 
-int yami_new_ctx(yami_ctx_t* ctx)
+int yami_new_ctx(yami_ctx_t* ctx, yami_yugi_payload_t payload)
 {
   ctx->state = MGS_WAITING_SYN;
   ctx->has_pegasus_ctx = 0;
+  memcpy(&ctx->pgspl.yugi_pl, &payload, sizeof(yami_yugi_payload_t));
   return( 0 );
 }
 
@@ -219,10 +227,8 @@ yami_resp_t yami_incoming(yami_ctx_t* ctx, byte* buffer, length_t length)
       if (ctx->state == MGS_WAITING_ACK) {
         handle_ack(ctx, &resp, buffer);
         if (!resp.end_connection) {
-          yami_pegasus_payload_t payload;
-          memcpy(payload.token, ctx->x.ackr.token->token, MEGAKI_TOKEN_BYTES);
-
-          if (on_connect_successful(ctx, (byte*) &payload) != 0) {
+          memcpy(ctx->pgspl.token, ctx->x.ackr.token->token, MEGAKI_TOKEN_BYTES);
+          if (on_connect_successful(ctx, (byte*) &ctx->pgspl) != 0) {
             goto kill_connection;
           }
         }
@@ -543,7 +549,7 @@ void handle_msg(yami_ctx_t* ctx, yami_resp_t* resp, byte* buf)
   uint32_t blkcount = MEGAKI_AES_BLOCKCOUNT(ntohl(hdr->preamble.length)),
            length = MEGAKI_AES_BLOCK_BYTES * blkcount;
   unsigned int ldummy;
-  byte msg[ YAMI_MAX_MESSAGE_LENGTH ];
+  byte msg[ YAMI_MAX_MESSAGE_LENGTH ], respb[ YAMI_MAX_MESSAGE_LENGTH ];
 
   mgk_aes_block_t* msg_contents = (mgk_aes_block_t*)(buf + 
         sizeof(mgk_msghdr_t)), hmac[ MEGAKI_HASH_BYTES ];
@@ -570,7 +576,25 @@ void handle_msg(yami_ctx_t* ctx, yami_resp_t* resp, byte* buf)
                   length, &ctx->x.ackr.kdec, (unsigned char*) hdr->iv.data, 
                   AES_DECRYPT);
   YAMI_DIAGLOGS("Decrypted message, TODO: Pegasus!");
-  
+  pegasus_ctx_t* pctx = YAMI_CPEGASUS(ctx);
+  if (pegasus_new_ctx(pctx, (byte*) &ctx->pgspl) != 0)
+    goto kill_connection;
+  ctx->has_pegasus_ctx = 1;
+
+  length_t respsz = YAMI_MAX_MESSAGE_LENGTH;
+  if (pegasus_handle_message(pctx, msg, length, respb, &respsz) != 0) {
+    YAMI_DIAGLOGS("Failed to queue message to Pegasus for handling");
+    goto kill_connection;
+  }
+
+  fprintf(stderr, "Response: ");
+  fwrite(respb, respsz, 1, stderr);
+  fprintf(stderr, "\n");
+  fflush(stderr);
+
+  pegasus_destroy_ctx(pctx);
+  ctx->has_pegasus_ctx = 0;
+
   return ;
   
 kill_connection:
@@ -579,14 +603,6 @@ kill_connection:
   
 int on_connect_successful(yami_ctx_t* ctx, byte* ctxdata)
 {
-  pegasus_ctx_t* pctx = YAMI_CPEGASUS(ctx);
-  if (pegasus_new_ctx(pctx, ctxdata) != 0)
-    goto failure;
-  ctx->has_pegasus_ctx = 1;
-
   return( 0 );
-
-failure:
-  return( -1 );
 }
 /** End Yami internal procedures **/
