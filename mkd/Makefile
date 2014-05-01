@@ -1,5 +1,5 @@
 CC=gcc
-CFLAGS=-O2 -Iinclude -Wall -g
+CFLAGS=-O2 -DDEBUG -DYAMI_DIAGNOSTIC -Iinclude -Wall -g
 LIBS=-L/usr/local/lib -pthread -lcrypto -luv
 
 OBJECTNAMES = \
