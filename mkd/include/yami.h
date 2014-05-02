@@ -34,7 +34,9 @@ typedef struct yami_conf_t {
 typedef struct yami_ctx_t yami_ctx_t;
 
 typedef struct yami_resp_t {
-  byte      end_connection;
+  int       end_connection,
+            uses_new_buffer;
+  byte*     new_buffer;
   length_t  data_size,
             tunneling_header_length;
 } yami_resp_t;

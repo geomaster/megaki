@@ -14,7 +14,7 @@
 
 #define YUGI_MESSAGE_HARD_LIMIT         131072
 #define YUGI_BUFFER_SIZE                4096
-
+#define YUGI_DEBUG
 /** Log macros **/
 #define YUGI_LOGF(lvl, fmt, ...) \
   if (yc->config.log_level <= (lvl)) { \
@@ -98,8 +98,7 @@ typedef struct conn_t {
   byte                recvbuf[ YUGI_BUFFER_SIZE ],
                       *dynrecvbuf,
                       is_closed,
-                      is_timed,
-                      kill_after_write;
+                      is_timed;
   pthread_mutex_t     refmut;
   struct sockaddr_in  addr;
   sem_t               recvmut;
@@ -108,9 +107,11 @@ typedef struct conn_t {
                       refcount,
                       tunnelheadlen,
                       expectlen,
+                      dynrecvbufsz,
                       schedexpectlen;
   yugi_t              *parent;
   conn_node_t         *node;
+  yami_resp_t         yami_resp;
   uv_timer_t          timeout_tmr;
   
 #ifdef YUGI_DEBUG
@@ -335,6 +336,9 @@ void yugi_cleanup(yugi_t* yc)
   for (c = yc->connections; c; c = cn) {
     yami_destroy_ctx(YUGI_CYAMI(c->cptr));
     cn = c->next;
+    if (c->cptr->dynrecvbuf) {
+      free(c->cptr->dynrecvbuf);
+    }
     free(c->cptr);
     free(c);
   }
@@ -408,6 +412,8 @@ void on_client_connect(uv_stream_t* server, int status)
     YUGI_LOGS(LOG_ERROR, "Failed to allocate memory for connection, dropping");
     goto close_client;
   }
+
+  conn->dynrecvbuf = NULL;
   memset(&conn->addr, 0, sizeof(struct sockaddr_in));
   int len = sizeof(struct sockaddr_in);
   uv_tcp_getpeername(client, (struct sockaddr*) &conn->addr, &len);
@@ -460,7 +466,6 @@ void on_client_connect(uv_stream_t* server, int status)
   conn->parent = yc;
   conn->refcount = 1;
   conn->stream =  (uv_stream_t*) client;
-  conn->kill_after_write = 0;
   conn->is_closed = 0;
   conn->is_timed = 1;
   conn->tunnelheadlen = yc->yami_iniths_len;
@@ -538,12 +543,17 @@ void on_data_written(uv_write_t* req, int status)
   YUGI_LOGCONNF(c, "Written %d bytes to stream", c->sndlen);
 
   c->expectlen = c->schedexpectlen;
-  if (!c->kill_after_write) {
+  if (!c->yami_resp.end_connection) {
     c->is_timed = 1;
     uv_timer_start(&c->timeout_tmr, &on_timeout_tick, yc->config.receive_timeout, 0);
   } else {
     close_connection(c);
   }
+
+  if (c->yami_resp.uses_new_buffer) {
+    free(c->yami_resp.new_buffer);
+  }
+
   release_connection(c);
   free(req);
 }
@@ -595,6 +605,8 @@ void async_cb_freeconn(uv_async_t* handle)
   
   sem_destroy(&c->recvmut);  
   pthread_mutex_destroy(&c->refmut);
+  if (c->dynrecvbuf)
+    free(c->dynrecvbuf);
   free(cnode);
   free(c);
   YUGI_ASYNC_END_BOILERPLATE(handle);
@@ -605,13 +617,23 @@ void async_cb_write_data(uv_async_t* handle)
   conn_t* c = (conn_t*) handle->data;
   
   uv_write_t* req = (uv_write_t*) malloc(sizeof(uv_write_t));
-  uv_buf_t bufdef = { .base = (char*)c->recvbuf, .len = c->sndlen };
+  
+  byte* buf;
+  if (c->yami_resp.uses_new_buffer) 
+    buf = c->yami_resp.new_buffer;
+  else 
+    buf = c->recvbuf;
+
+  uv_buf_t bufdef = { .base = (char*)buf, .len = c->sndlen };
   req->data = c;
   
   if (uv_write(req, c->stream, &bufdef, 1, on_data_written) != 0) {
 #ifdef YUG_DEBUG
     YUGI_LOGCONNS(c, "Writing failed");
 #endif
+    if (c->yami_resp.uses_new_buffer)
+      free(buf);
+    
     release_connection(c);
     free(req); 
   }
@@ -697,6 +719,8 @@ void on_data_read(uv_stream_t* stream, ssize_t nread, const uv_buf_t* buf)
     goto close_conn;
   ts.tv_sec += yc->config.lock_timeout;
 
+  YUGI_LOGCONNF(c, "Incoming %d bytes", (int) nread);
+
   if (sem_timedwait(&c->recvmut, &ts) != 0) {
     YUGI_LOGCONNS(c, "Killing connection, could not lock semaphore");
     YUGI_LOGS(LOG_WARNING, "Semaphore wait failed (probably timeout), dropping connection");
@@ -706,7 +730,9 @@ void on_data_read(uv_stream_t* stream, ssize_t nread, const uv_buf_t* buf)
   int newsize = c->recvlen + (int) nread;
   uv_timer_start(&c->timeout_tmr, &on_timeout_tick, yc->config.receive_timeout, 0);
   
-  if (newsize >= c->tunnelheadlen) {
+  byte* dynrecvbuf = NULL;
+  if (!c->dynrecvbuf &&
+      newsize >= c->tunnelheadlen) {
     YUGI_LOGCONNS(c, "Asking Yami for expected length");
     int res = yami_get_packetlen(YUGI_CYAMI(c), (byte*) buf->base, (length_t*) &c->expectlen);
     
@@ -716,18 +742,42 @@ void on_data_read(uv_stream_t* stream, ssize_t nread, const uv_buf_t* buf)
     } else {
       YUGI_LOGCONNF(c, "Yami expects %d bytes of additional data",
                           c->expectlen - c->tunnelheadlen);
+      if (c->expectlen > yc->config.buffer_length) {
+        dynrecvbuf = malloc(yc->config.buffer_length);
+        if (!dynrecvbuf) {
+          YUGI_LOGS(LOG_ERROR, "Couldn't allocate memory for dynrecvbuffer, dropping "
+              "connection");
+          goto close_conn;
+        }
+
+        c->dynrecvbuf = dynrecvbuf;
+        c->dynrecvbufsz = yc->config.buffer_length;
+      }
     }
   }
 
   if (newsize > c->expectlen) {
     YUGI_LOGCONNF(c, "expect:%d newsize:%d nread:%d\n", (int)c->expectlen, (int)newsize, (int)nread);
     YUGI_LOGCONNS(c, "Bombed by too much data; killing connection");
-    goto close_conn;
+    goto dealloc_dynrecvbuf;
   }
   
-  memcpy(c->recvbuf + c->recvlen, buf->base, nread);
+  if (c->expectlen > yc->config.buffer_length) {
+    if (newsize >= c->dynrecvbufsz) {
+      c->dynrecvbuf = realloc(c->dynrecvbuf, c->dynrecvbufsz + yc->config.buffer_length);
+      if (!c->dynrecvbuf) {
+        YUGI_LOGS(LOG_ERROR, "Could not reallocate block to bigger size, killing "
+            "connection");
+        goto dealloc_dynrecvbuf;
+      }
+      c->dynrecvbufsz += yc->config.buffer_length;
+    }
+    memcpy(c->dynrecvbuf + c->recvlen, buf->base, nread);
+  } else {
+    memcpy(c->recvbuf + c->recvlen, buf->base, nread);
+  }
   c->recvlen = newsize;
-  
+
   if (newsize == c->expectlen) {
     YUGI_LOGCONNF(c, "Calling Yami to handle message of %d bytes", newsize);
     
@@ -750,11 +800,17 @@ void on_data_read(uv_stream_t* stream, ssize_t nread, const uv_buf_t* buf)
     }
   }
 
+  YUGI_NONFAIL(sem_post(&c->recvmut) == 0);
   return ;
   
 unlock_mut:
   YUGI_NONFAIL(sem_post(&c->recvmut) == 0);
 
+dealloc_dynrecvbuf:
+  if (dynrecvbuf) {
+    free(dynrecvbuf);
+    c->dynrecvbuf = NULL;
+  }
 close_conn:
   if (close_connection(c) != 0) {
     YUGI_LOGCONNS(c, "Could not close connection");
@@ -778,14 +834,25 @@ void job_handle_message(void* data)
   
   length_t len = c->recvlen;
   c->recvlen = 0;
-  sem_post(&c->recvmut);
+  YUGI_NONFAIL(sem_post(&c->recvmut) == 0);
 
-  yami_resp_t resp = yami_incoming(YUGI_CYAMI(c), c->recvbuf, len);
+  byte *buf = c->recvbuf;
+  int uses_dynrecvbuf = 0;
+  if (c->dynrecvbuf) {
+    buf = c->dynrecvbuf;
+    uses_dynrecvbuf = 1;
+  }
+
+  yami_resp_t resp = yami_incoming(YUGI_CYAMI(c), buf, len);
+  c->yami_resp = resp;
+  if (uses_dynrecvbuf) {
+    free(buf);
+    c->dynrecvbuf = NULL;
+  }
   c->sndlen = resp.data_size;
   
   if (!c->is_closed && resp.data_size > 0) {
     YUGI_LOGCONNF(c, "Sending %d bytes of data from Yami", resp.data_size);
-    c->kill_after_write = resp.end_connection;
     grab_spawn_async(yc, c, c, async_cb_write_data);
   } else if (resp.end_connection) {
     if (!c->is_closed) {
@@ -799,7 +866,12 @@ void job_handle_message(void* data)
       c->tunnelheadlen = resp.tunneling_header_length;
     }
   }
-  
+ 
+dealloc_yamibuf:
+  if (resp.uses_new_buffer)
+    free(resp.new_buffer);
+
+quit:
   release_connection(c);
 }
 

@@ -51,6 +51,11 @@ int main(int argc, char** argv)
   ios.write_callback = &writecb;
   ios.cb_param = &sfd;
 
+  byte*stuff = malloc(32768);
+  int i;
+  for (i = 0; i < 32768; ++i)
+    stuff[i] = (i % 10) + '0';
+
   RSA* srv = RSA_new();
   FILE* f = fopen("server.pub", "r");
   PEM_read_RSA_PUBKEY(f, &srv, NULL, "");
@@ -60,7 +65,7 @@ int main(int argc, char** argv)
   if (szkr_do_handshake(ctx) == 0) {
     printf("success!\n");
     char msg[] = "hello world!", dummy[ 100 ];
-    szkr_send_message(ctx, msg, sizeof(msg) - 1, NULL, NULL);
+    szkr_send_message(ctx, stuff, 32768, NULL, NULL);
     while(1){sleep(10);}
   }
 

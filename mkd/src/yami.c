@@ -29,7 +29,7 @@
 #define min(a, b) ((a) < (b) ? (a) : (b))
 
 #define YAMI_MAX_MESSAGE_LENGTH         \
-  MEGAKI_MAX_MSGSIZE
+  (1024*1024)
 
 #define YAMI_CPEGASUS(ctx) \
   (pegasus_ctx_t*)((byte*) ctx + sizeof(yami_ctx_t))
@@ -204,6 +204,8 @@ yami_resp_t yami_incoming(yami_ctx_t* ctx, byte* buffer, length_t length)
 {
   yami_resp_t resp;
   resp.data_size = 0;
+  resp.uses_new_buffer = 0;
+  resp.end_connection = 0;
   resp.tunneling_header_length = sizeof(mgk_header_t);
   
   mgk_header_t* hdr = (mgk_header_t*) buffer;
@@ -281,7 +283,7 @@ int yami_get_packetlen(yami_ctx_t* ctx, byte* header, length_t* len)
         return(0);
       
       uint32_t msglen = ntohl(preamble->length);
-      if (msglen <= 0 || MEGAKI_AES_ENCSIZE(msglen) > YAMI_MAX_MESSAGE_LENGTH)
+      if (msglen <= 0)
         return(0);
     
       /* expect full message header (incl. this preamble) and 

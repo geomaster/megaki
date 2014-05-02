@@ -39,7 +39,7 @@ int broker(void* param)
       if (read(STDIN_FILENO, &streq, sizeof(pegasus_start_req_t)) != sizeof(pegasus_start_req_t))
         goto die;
 
-      byte platipus[ 2000 ];
+      byte platipus[2000];
       assert(streq.datasize < 2000);
       if (read(STDIN_FILENO, platipus, streq.datasize) != streq.datasize)
         goto die;
@@ -60,14 +60,16 @@ int broker(void* param)
         goto die;
 
       rsphdr.type = PEGASUS_RESP_HANDLE_OK;
-      byte ppp[ 2000 ];
-      assert(hreq.msgsize < 2000);
+      byte* ppp = malloc(256*1024);
+      assert(hreq.msgsize < 256*1024);
       if (read(STDIN_FILENO, ppp, hreq.msgsize) != hreq.msgsize)
         goto die;
 
       fprintf(stderr, "Broker handling message (%d): ", (int) hreq.msgsize);
       fwrite(ppp, hreq.msgsize, 1, stderr);
       fprintf(stderr, "\n");
+
+      free(ppp);
     }
     write(STDOUT_FILENO, &rsphdr, sizeof(pegasus_resp_hdr_t));
     if (rsphdr.type == PEGASUS_RESP_HANDLE_OK) {
@@ -100,8 +102,8 @@ int main(int argc, char** argv)
     .start_broker_cb = &broker,
     .start_broker_cb_param = NULL,
     .context_data_length = sizeof(pegasus_yami_payload_t),
-    .minion_pool_size = 25,
-    .log_level = LOG_NOTICE,
+    .minion_pool_size = 4,
+    .log_level = LOG_DEBUG2,
     .log_file = stderr,
     .lock_timeout = 10,
     .message_timeout = { .tv_sec = 1, .tv_usec = 0 }
@@ -129,10 +131,10 @@ int main(int argc, char** argv)
   yugi_conf_t conf = {
     .listen_address = "127.0.0.1",
     .listen_port = 6363,
-    .thread_count = 20,
+    .thread_count = 2,
     .queue_size = 2000,
     .log_file = stderr,
-    .log_level = LOG_NOTICE,
+    .log_level = LOG_DEBUG2,
     .receive_timeout = 60000,
     .buffer_length = 16384,
     .socket_backlog = 50,
