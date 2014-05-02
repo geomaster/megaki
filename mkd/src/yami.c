@@ -281,11 +281,11 @@ int yami_get_packetlen(yami_ctx_t* ctx, byte* header, length_t* len)
         return(0);
       
       uint32_t msglen = ntohl(preamble->length);
-      if (msglen <= 0)
+      if (msglen <= 0 || MEGAKI_AES_ENCSIZE(msglen) > YAMI_MAX_MESSAGE_LENGTH)
         return(0);
     
       /* expect full message header (incl. this preamble) and 
-      * bytes announced */
+       * bytes announced */
       *len = sizeof(mgk_msghdr_t) + MEGAKI_AES_ENCSIZE(msglen);
       return(1);
   }
@@ -554,6 +554,12 @@ void handle_msg(yami_ctx_t* ctx, yami_resp_t* resp, byte* buf)
   mgk_aes_block_t* msg_contents = (mgk_aes_block_t*)(buf + 
         sizeof(mgk_msghdr_t)), hmac[ MEGAKI_HASH_BYTES ];
   
+  /* This should already be properly sanitized beforehand!!! */
+  if (length > YAMI_MAX_MESSAGE_LENGTH) {
+    YAMI_DIAGLOGS("Message too long!");
+    goto kill_connection;
+  }
+
   YAMI_DIAGLOGS("Handling MSG");
   if (!mgk_memeql(ctx->x.synacks.token->token, hdr->token.data, MEGAKI_TOKEN_BYTES)) {
     YAMI_DIAGLOGS("Mismatching token");
