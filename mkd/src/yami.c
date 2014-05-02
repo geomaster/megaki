@@ -543,7 +543,8 @@ kill_connection:
 void handle_msg(yami_ctx_t* ctx, yami_resp_t* resp, byte* buf)
 {
   mgk_msghdr_t* hdr = (mgk_msghdr_t*) buf;
-  uint32_t blkcount = MEGAKI_AES_BLOCKCOUNT(ntohl(hdr->preamble.length)),
+  uint32_t rllen = ntohl(hdr->preamble.length),
+           blkcount = MEGAKI_AES_BLOCKCOUNT(rllen),
            length = MEGAKI_AES_BLOCK_BYTES * blkcount;
   unsigned int ldummy;
   byte msg[ YAMI_MAX_MESSAGE_LENGTH ], respb[ YAMI_MAX_MESSAGE_LENGTH ];
@@ -585,7 +586,7 @@ void handle_msg(yami_ctx_t* ctx, yami_resp_t* resp, byte* buf)
   ctx->has_pegasus_ctx = 1;
 
   length_t respsz = YAMI_MAX_MESSAGE_LENGTH;
-  if (pegasus_handle_message(pctx, msg, length, respb, &respsz) != 0) {
+  if (pegasus_handle_message(pctx, msg, rllen, respb, &respsz) != 0) {
     YAMI_DIAGLOGS("Failed to queue message to Pegasus for handling");
     goto kill_connection;
   }
