@@ -412,7 +412,7 @@ int assemble_synack(yami_ctx_t* ctx, RSA* clrsa, mgk_synack_t* res, const byte* 
 {
   mgk_synack_plain_t plain;
   YAMI_DIAGLOGS("Assembling SYN-ACK");
-  RAND_pseudo_bytes(plain.token.data, MEGAKI_TOKEN_BYTES)
+  RAND_pseudo_bytes(plain.token.data, MEGAKI_TOKEN_BYTES);
 
   tokentry* tok;
   if (!err) {
