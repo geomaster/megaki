@@ -65,7 +65,7 @@ int broker(void* param)
       if (read(STDIN_FILENO, ppp, hreq.msgsize) != hreq.msgsize)
         goto die;
 
-      fprintf(stderr, "Broker handling message: ");
+      fprintf(stderr, "Broker handling message (%d): ", (int) hreq.msgsize);
       fwrite(ppp, hreq.msgsize, 1, stderr);
       fprintf(stderr, "\n");
     }
