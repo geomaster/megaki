@@ -208,6 +208,7 @@ recreate_minion:
   PEGASUS_LOGS(LOG_WARNING, "Minion in unstable state, we will recreate "
       "it and then fail to serve this connection");
   smite_minion(minion);
+  minion->is_unstable = 0;
   if ((res = prefork_minion(minion)) != 0) {
     if (res == -1) {
       smite_minion(minion);
@@ -387,6 +388,7 @@ int prefork_minions(int count)
   PEGASUS_LOGF(LOG_NOTICE, "Preforking %d minions", count);
   for (i = 0; i < count; ++i) {
     pegasus_minion_t* min = &pegasus__minions[i];
+    min->is_unstable = 0;
     int res = prefork_minion(min);
     if (res == -2)
       goto rollback_preforks;
