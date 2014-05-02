@@ -1,5 +1,5 @@
 CC=gcc
-CFLAGS=-O2 -DDEBUG -DYAMI_DIAGNOSTIC -Iinclude -Wall -g
+CFLAGS=-fdump-rtl-expand -O2 -DDEBUG -DYAMI_DIAGNOSTIC -Iinclude -Wall -g
 LIBS=-L/usr/local/lib -pthread -lcrypto -luv
 
 OBJECTNAMES = \
@@ -37,13 +37,18 @@ COMMONSRCPREF = $(addprefix ../common/src/,$(COMMONSRC))
 OBJ=$(patsubst %,obj/%,$(OBJECTNAMES))
 HEADERS=$(patsubst %,include/%,$(HEADERNAMES))
 
-default: bin/mkd
+default: bin/mkd callgraph
 
 $(addprefix include/,$(COMMONHEADERS)): $(COMMONHEADERSPREF)
 	cp $(COMMONHEADERSPREF) include/
 
 $(addprefix src/,$(COMMONSRC)): $(COMMONSRCPREF)
 	cp $(COMMONSRCPREF) src/
+
+callgraph: docs/mkd-callgraph.gv
+
+docs/mkd-callgraph.gv: $(OBJ)
+	egypt obj/*.expand > docs/mkd-callgraph.gv
 	
 bin/mkd: $(OBJ)         
 	gcc -o $@ $^ $(CFLAGS) $(LIBS)
@@ -54,6 +59,6 @@ obj/%.o: src/%.c $(HEADERS)
 .PHONY: clean
 
 clean:
-	rm -f obj/*.o bin/mkd
+	rm -f obj/*.o obj/*.expand bin/mkd
 	cd include && rm -f $(COMMONHEADERS)
 	cd src && rm -f $(COMMONSRC)
