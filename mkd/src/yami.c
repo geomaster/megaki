@@ -412,10 +412,7 @@ int assemble_synack(yami_ctx_t* ctx, RSA* clrsa, mgk_synack_t* res, const byte* 
 {
   mgk_synack_plain_t plain;
   YAMI_DIAGLOGS("Assembling SYN-ACK");
-  if (RAND_pseudo_bytes(plain.token.data, MEGAKI_TOKEN_BYTES) < 0) {
-    YAMI_DIAGLOGS("Internal error: failed to generate pseudo bytes for token");
-    goto failure;
-  }
+  RAND_pseudo_bytes(plain.token.data, MEGAKI_TOKEN_BYTES)
 
   tokentry* tok;
   if (!err) {
