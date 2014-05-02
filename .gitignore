@@ -18,3 +18,6 @@ libsazukari/tests/*
 
 # ignore my vim settings
 *.vim
+
+# ignore gcc expansion files
+*.expand
