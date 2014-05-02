@@ -12,7 +12,8 @@
 #define YUGI_VERSION_REVISION           0
 #define YUGI_VERSION_SUFFIX             "-privt"
 
-#define YUGI_MAX_MESSAGE_LENGTH         8448
+#define YUGI_MESSAGE_HARD_LIMIT         131072
+#define YUGI_BUFFER_SIZE                4096
 
 /** Log macros **/
 #define YUGI_LOGF(lvl, fmt, ...) \
@@ -94,8 +95,8 @@ typedef struct yugi_t {
 
 typedef struct conn_t {
   uv_stream_t         *stream;
-  byte                recvbuf[ YUGI_MAX_MESSAGE_LENGTH ],
-                      sndbuf [ YUGI_MAX_MESSAGE_LENGTH ],
+  byte                recvbuf[ YUGI_BUFFER_SIZE ],
+                      *dynrecvbuf,
                       is_closed,
                       is_timed,
                       kill_after_write;
@@ -368,9 +369,9 @@ void on_client_connect(uv_stream_t* server, int status)
   int res;
   
   if (status != 0) {
-    #ifdef YUGI_DEBUG
+#ifdef YUGI_DEBUG
     YUGI_LOGF(LOG_DEBUG1, "Failed connection attempt (%s)", uv_strerror(status));
-    #endif
+#endif
     goto failure;
   }
  
@@ -388,15 +389,15 @@ void on_client_connect(uv_stream_t* server, int status)
   }
   
   if ((res = uv_accept(server, (uv_stream_t*) client)) != 0) {
-    #ifdef YUGI_DEBUG
+#ifdef YUGI_DEBUG
     YUGI_LOGF(LOG_DEBUG1, "Failed to accept connection (%s)", uv_strerror(res));
-    #endif
+#endif
     goto close_client;
   }
   
-  #ifdef YUGI_DEBUG
+#ifdef YUGI_DEBUG
   YUGI_LOGS(LOG_DEBUG2, "Connection established!");
-  #endif
+#endif
   
   /* we hope libc malloc satisfies these from the fastbin, which
    * really is something that *should* happen */
@@ -467,9 +468,9 @@ void on_client_connect(uv_stream_t* server, int status)
   conn->sndlen = 0; 
   conn->expectlen = yc->yami_iniths_len;
   
-  #ifdef YUGI_DEBUG
+#ifdef YUGI_DEBUG
   dbg_generate_connection_id(conn->dbg_id);
-  #endif
+#endif
   
   if ((res = uv_timer_start(&conn->timeout_tmr, &on_timeout_tick, yc->config.receive_timeout,
                             0)) == -1) {
@@ -481,10 +482,10 @@ void on_client_connect(uv_stream_t* server, int status)
   if ((res = uv_read_start((uv_stream_t*) client,
                            &alloc_buffer,
                            &on_data_read)) != 0) {
-    #ifdef YUGI_DEBUG
+#ifdef YUGI_DEBUG
     YUGI_LOGF(LOG_DEBUG1, "Failed to start reading from connection (%s)",
               uv_strerror(res));
-    #endif
+#endif
     goto dealloc_connection_node;
   } else {
     YUGI_LOGCONNS(conn, "Started receiving");
@@ -608,9 +609,9 @@ void async_cb_write_data(uv_async_t* handle)
   req->data = c;
   
   if (uv_write(req, c->stream, &bufdef, 1, on_data_written) != 0) {
-    #ifdef YUG_DEBUG
+#ifdef YUG_DEBUG
     YUGI_LOGCONNS(c, "Writing failed");
-    #endif
+#endif
     release_connection(c);
     free(req); 
   }
@@ -847,9 +848,9 @@ void walk_and_destroy(uv_handle_t* handle, void* arg)
     return ;
     
   static int x = 0;
-  #ifdef YUGI_DEBUG
+#ifdef YUGI_DEBUG
   YUGI_LOGF(LOG_DEBUG2, "Destroying handle %p (%d)", handle, ++x);
-  #endif
+#endif
   
   if (handle != (uv_handle_t*) &yc->uv_servconn &&
       !(handle->type == UV_TIMER && (uv_timer_t*) handle == &((conn_t*)handle->data)->timeout_tmr) &&
@@ -894,15 +895,15 @@ void on_watchdog_close(uv_handle_t* tmr)
 void on_timeout_tick(uv_timer_t* tmr)
 {
   conn_t* c = (conn_t*) tmr->data;
-  #ifdef YUGI_DEBUG
+#ifdef YUGI_DEBUG
   yugi_t* yc = c->parent;
-  #endif
+#endif
   
   YUGI_LOGCONNS(c, "Timeout timer tick");
   if (!c->is_closed && c->is_timed) {
-    #ifdef YUGI_DEBUG
+#ifdef YUGI_DEBUG
     YUGI_LOGCONNS(c, "Connection timed out, closing");
-    #endif
+#endif
 
     close_connection(c);
   }
