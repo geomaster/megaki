@@ -102,7 +102,7 @@ void handle_synack(yami_ctx_t* ctx, yami_resp_t* resp, byte* buf);
 void handle_ack(yami_ctx_t* ctx, yami_resp_t* resp, byte* buf);
 int  on_connect_successful(yami_ctx_t* ctx, byte* ctxdata);
 int  assemble_synack(yami_ctx_t* ctx, RSA* clrsa, mgk_synack_t* res, const byte* err);
-void handle_msg(yami_ctx_t* ctx, yami_resp_t* resp, byte* buf);
+void handle_msg(yami_ctx_t* ctx, yami_resp_t* resp, byte* buf, length_t len);
 /** End prototypes for internal procedures **/
 
 /** Yami public interface **/
@@ -241,7 +241,7 @@ yami_resp_t yami_incoming(yami_ctx_t* ctx, byte* buffer, length_t length)
       
     case magic_msg:
       if (ctx->state == MGS_TUNNEL_READY)
-        handle_msg(ctx, &resp, buffer);
+        handle_msg(ctx, &resp, buffer, length);
       else {
         YAMI_DIAGLOGS("Unexpected MSG packet");
         goto kill_connection;
@@ -540,67 +540,79 @@ kill_connection:
   resp->end_connection = 1;
 }
 
-void handle_msg(yami_ctx_t* ctx, yami_resp_t* resp, byte* buf)
+void handle_msg(yami_ctx_t* ctx, yami_resp_t* resp, byte* buf, length_t len)
 {
-  mgk_msghdr_t* hdr = (mgk_msghdr_t*) buf;
-  uint32_t rllen = ntohl(hdr->preamble.length),
-           blkcount = MEGAKI_AES_BLOCKCOUNT(rllen),
-           length = MEGAKI_AES_BLOCK_BYTES * blkcount;
-  unsigned int ldummy;
-  byte msg[ YAMI_MAX_MESSAGE_LENGTH ], respb[ YAMI_MAX_MESSAGE_LENGTH ];
-
-  mgk_aes_block_t* msg_contents = (mgk_aes_block_t*)(buf + 
-        sizeof(mgk_msghdr_t)), hmac[ MEGAKI_HASH_BYTES ];
-  
-  /* This should already be properly sanitized beforehand!!! */
-  if (length > YAMI_MAX_MESSAGE_LENGTH) {
-    YAMI_DIAGLOGS("Message too long!");
+  length_t msglen = ntohl(((mgk_msgpreamble_t*) buf)->length);
+  if (len != sizeof(mgk_msghdr_t) + MEGAKI_AES_ENCSIZE(msglen)) {
+    YAMI_DIAGLOGS("Received message length / advertised message length mismatch");
     goto kill_connection;
   }
 
-  YAMI_DIAGLOGS("Handling MSG");
-  if (!mgk_memeql(ctx->x.synacks.token->token, hdr->token.data, MEGAKI_TOKEN_BYTES)) {
-    YAMI_DIAGLOGS("Mismatching token");
+  if (len > YAMI_MAX_MESSAGE_LENGTH) {
+    YAMI_DIAGLOGS("Message too long for me");
+    /* TODO: Send an error response, don't kill the connection! */
     goto kill_connection;
   }
-  
-  if (!HMAC(EVP_sha256(), ctx->x.synacks.token->payload, MEGAKI_AES_KEYBYTES,
-            (unsigned char*) hdr->iv.data, length + MEGAKI_AES_BLOCK_BYTES, 
-            (unsigned char*) hmac->data, &ldummy)) {
-    YAMI_DIAGLOGS("Internal error: could not compute HMAC");
+
+  mgk_token_t tok;
+  mgk_aes_key_t masterkey;
+  memcpy(tok.data, ctx->x.ackr.token->token, MEGAKI_TOKEN_BYTES);
+  memcpy(masterkey.data, ctx->x.ackr.token->payload, MEGAKI_AES_KEYBYTES);
+
+  length_t declen = MEGAKI_AES_ENCSIZE(msglen);
+  byte *msgdec = malloc(MEGAKI_AES_ENCSIZE(msglen));
+  if (!msgdec) {
+    YAMI_DIAGLOGS("Memory allocation error");
     goto kill_connection;
   }
-  
-  if (!mgk_memeql(hmac->data, hdr->mac.data, MEGAKI_HASH_BYTES)) {
-    YAMI_DIAGLOGS("Wrong HMAC");
-    goto kill_connection;
+
+  int res =
+    mgk_decode_message(buf, len, tok, masterkey, &ctx->x.ackr.kdec, msgdec, &declen);
+  if (res == -1) {
+    YAMI_DIAGLOGS("Protocol error!");
+    goto dealloc_buffer;
+  } else if (res == -2 || res == -3) {
+    YAMI_DIAGLOGS("Internal error!");
+    /* TODO: Send an error response, don't kill the connection! */
+    goto dealloc_buffer;
   }
-  
-  AES_cbc_encrypt((unsigned char*) msg_contents, (unsigned char*) msg,
-                  length, &ctx->x.ackr.kdec, (unsigned char*) hdr->iv.data, 
-                  AES_DECRYPT);
+
   YAMI_DIAGLOGS("Decrypted message, TODO: Pegasus!");
   pegasus_ctx_t* pctx = YAMI_CPEGASUS(ctx);
-  if (pegasus_new_ctx(pctx, (byte*) &ctx->pgspl) != 0)
-    goto kill_connection;
+  if (pegasus_new_ctx(pctx, (byte*) &ctx->pgspl) != 0) {
+    goto dealloc_buffer;
+  }
   ctx->has_pegasus_ctx = 1;
 
   length_t respsz = YAMI_MAX_MESSAGE_LENGTH;
-  if (pegasus_handle_message(pctx, msg, rllen, respb, &respsz) != 0) {
+  byte *respb = NULL;
+  if (pegasus_handle_message(pctx, msgdec, msglen, &respb, &respsz) != 0) {
     YAMI_DIAGLOGS("Failed to queue message to Pegasus for handling");
-    goto kill_connection;
+    /* TODO: Send an error response, don't kill the connection! */
+    goto dealloc_buffer;
   }
 
+  if (!respb) {
+    YAMI_DIAGLOGS("This should NEVER happen!!!");
+    goto dealloc_buffer;
+  }
+  
   fprintf(stderr, "Response: ");
   fwrite(respb, respsz, 1, stderr);
   fprintf(stderr, "\n");
   fflush(stderr);
+
+  free(respb);
+  free(msgdec);
 
   pegasus_destroy_ctx(pctx);
   ctx->has_pegasus_ctx = 0;
 
   return ;
   
+dealloc_buffer:
+  free(msgdec);
+
 kill_connection:
   resp->end_connection = 1;
 }

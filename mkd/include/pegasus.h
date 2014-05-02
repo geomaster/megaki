@@ -53,7 +53,7 @@ int         pegasus_getcontextsize();
 int         pegasus_init(pegasus_conf_t* config);
 int         pegasus_new_ctx(pegasus_ctx_t* ctx, byte* ctxdata);
 int         pegasus_handle_message(pegasus_ctx_t* ctx, const byte* buf, 
-              length_t msglen, byte* response, length_t* resplen);
+              length_t msglen, byte** response, length_t* resplen);
 void        pegasus_destroy_ctx(pegasus_ctx_t* ctx);
 void        pegasus_cleanup();
 /** End public functions for MKD Pegasus **/

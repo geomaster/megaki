@@ -198,19 +198,28 @@ int szkr_send_message(szkr_ctx_t* ctx, byte* msg, length_t msglen,
 
   length_t bufsize = sizeof(mgk_msghdr_t) + encoded_len;
   byte* outbuf = malloc(bufsize);
-  if (mgk_encode_message(msg, msglen, ctx->token, ctx->master_symmetric, 
-        &ctx->kenc, outbuf, &bufsize) != 0) {
+  if (!outbuf) {
     err = szkr_err_internal;
     goto failure;
   }
 
+  if (mgk_encode_message(msg, msglen, ctx->token, ctx->master_symmetric, 
+        &ctx->kenc, outbuf, &bufsize) != 0) {
+    err = szkr_err_internal;
+    goto dealloc_buffer;
+  }
+
   if (!write_packet(&ctx->ios, outbuf, bufsize)) {
     err = szkr_err_io;
-    goto failure;
+    goto dealloc_buffer;
   }
 
   ctx->last_err = szkr_err_none;
+  free(outbuf);
   return( 0 );
+
+dealloc_buffer:
+  free(outbuf);
 
 failure:
   ctx->last_err = err;

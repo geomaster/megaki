@@ -235,7 +235,7 @@ failure:
 }
 
 int pegasus_handle_message(pegasus_ctx_t* ctx, const byte* buf, length_t
-      msglen, byte* response, length_t *resplen)
+      msglen, byte** response, length_t *resplen)
 {
   pegasus_minion_t* min = ctx->minion;
   if (min->is_unstable) {
@@ -281,12 +281,23 @@ int pegasus_handle_message(pegasus_ctx_t* ctx, const byte* buf, length_t
   }
   *resplen = hresp.respsize;
 
-  if (!read_packet(min->fds[0], response, hresp.respsize)) {
-    PEGASUS_LOGF(LOG_WARNING, "Unable to read response data from minion %ld, unstable state, further calls will fail", (long) min->pid);
+
+  byte* respbuf = malloc(hresp.respsize);
+  if (!respbuf) {
+    PEGASUS_LOGS(LOG_ERROR, "Memory allocation failed, unstable state of minion, further calls will fail!");
     goto set_unstable;
   }
+
+  if (!read_packet(min->fds[0], respbuf, hresp.respsize)) {
+    PEGASUS_LOGF(LOG_WARNING, "Unable to read response data from minion %ld, unstable state, further calls will fail", (long) min->pid);
+    goto dealloc_buffer;
+  }
 fprintf(stderr,"resp is %d\n", (int)*resplen);
+  *response = respbuf;
   return( 0 );
+
+dealloc_buffer:
+  free(respbuf);
 
 set_unstable:
   min->is_unstable = 1;

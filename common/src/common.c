@@ -123,7 +123,48 @@ int mgk_decode_message(const byte* msg, length_t msglen,
     mgk_token_t token, const mgk_aes_key_t key, AES_KEY *schdkey,
     byte* res, length_t *reslen)
 {
+  mgk_msghdr_t* hdr = (mgk_msghdr_t*) msg;
+  uint32_t rllen = ntohl(hdr->preamble.length),
+           blkcount = MEGAKI_AES_BLOCKCOUNT(rllen),
+           length = MEGAKI_AES_BLOCK_BYTES * blkcount;
+  unsigned int ldummy;
 
+  if (length > *reslen)
+    return( -3 );
+
+  if (sizeof(mgk_msghdr_t) + length != msglen) {
+    goto proto_error;
+  }
+
+  mgk_aes_block_t* msg_contents = (mgk_aes_block_t*)(msg + 
+        sizeof(mgk_msghdr_t)), hmac[ MEGAKI_HASH_BYTES ];
+ 
+  if (!mgk_memeql(token.data, hdr->token.data, MEGAKI_TOKEN_BYTES)) {
+    goto proto_error;
+  }
+  
+  if (!HMAC(EVP_sha256(), key.data, MEGAKI_AES_KEYBYTES,
+            (unsigned char*) hdr->iv.data, length + MEGAKI_AES_BLOCK_BYTES, 
+            (unsigned char*) hmac->data, &ldummy)) {
+    goto internal_error;
+  }
+  
+  if (!mgk_memeql(hmac->data, hdr->mac.data, MEGAKI_HASH_BYTES)) {
+    goto proto_error;
+  }
+  
+  AES_cbc_encrypt((unsigned char*) msg_contents, (unsigned char*) res,
+                  length, schdkey, (unsigned char*) hdr->iv.data, 
+                  AES_DECRYPT);
+  *reslen = rllen;
+
+  return ( 0 );
+
+proto_error:
+  return( -1 );
+
+internal_error:
+  return( -3 );
 }
 
 

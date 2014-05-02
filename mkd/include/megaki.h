@@ -166,7 +166,8 @@ void mgk_derive_master(const byte* srvsymm, const byte* clsymm,
 int mgk_encode_message(byte* msg, length_t msglen, 
     mgk_token_t token, const mgk_aes_key_t key, AES_KEY *schdkey,
     byte* res, length_t *reslen);
-/* returns -1 on protocol error, -2 on internal failure: */
+/* returns -1 on protocol error, -2 on internal failure, -3 on insufficient
+ * buffer size: */
 int mgk_decode_message(const byte* msg, length_t msglen, 
     mgk_token_t token, const mgk_aes_key_t key, AES_KEY *schdkey,
     byte* res, length_t *reslen);
