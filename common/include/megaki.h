@@ -1,6 +1,7 @@
 #ifndef __MEGAKI_H__
 #define __MEGAKI_H__
 #include "common.h"
+#include <openssl/aes.h>
 #include <stdint.h>
 
 /* - 42 because of PKCS#1-OAEP, see RSA_public_encrypt(3ssl) */
@@ -26,12 +27,14 @@ extern const byte MEGAKI_INCOMPATIBLE_VERSIONS_ERROR[MEGAKI_ERROR_CODE_BYTES];
 extern const byte MEGAKI_SERVICE_UNAVAILABLE_ERROR[MEGAKI_ERROR_CODE_BYTES];
 extern const byte MEGAKI_SERVER_BLACKLISTED_ERROR[MEGAKI_ERROR_CODE_BYTES];
 
+
 /** Type of packet **/
 typedef enum mgk_packet_type {
   magic_syn = 0x01,
   magic_synack = 0x02,
   magic_ack = 0x03,
   magic_msg = 0x04,
+  magic_msg_err = 0xE4,
   magic_restart = 0x05,
   magic_ackack = 0x06
 } mgk_magic_type;
@@ -158,8 +161,15 @@ typedef struct pk mgk_msghdr_t {
 int mgk_memeql(const byte*, const byte*, length_t);
 int mgk_check_magic(const mgk_header_t* hdr);
 void mgk_fill_magic(mgk_header_t* hdr);
-void mgk_derive_master(const byte* srvsymm, const byte* clsymm, byte* mastersymm);
+void mgk_derive_master(const byte* srvsymm, const byte* clsymm,
+    byte* mastersymm);
+int mgk_encode_message(byte* msg, length_t msglen, 
+    mgk_token_t token, const mgk_aes_key_t key, AES_KEY *schdkey,
+    byte* res, length_t *reslen);
+/* returns -1 on protocol error, -2 on internal failure: */
+int mgk_decode_message(const byte* msg, length_t msglen, 
+    mgk_token_t token, const mgk_aes_key_t key, AES_KEY *schdkey,
+    byte* res, length_t *reslen);
 
 /** End common definitions for Megaki protocol **/
-
 #endif

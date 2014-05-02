@@ -1,5 +1,9 @@
 #include "common.h"
 #include "megaki.h"
+#include <openssl/aes.h>
+#include <openssl/rand.h>
+#include <openssl/hmac.h>
+#include <arpa/inet.h>
 #include <string.h>
 
 const byte MEGAKI_MAGIC[] = { 'M', 'G', 'K', 0xAA, 0xCA };
@@ -66,3 +70,60 @@ void mgk_derive_master(const byte* srvsymm, const byte* clsymm, byte* mastersymm
   for (i = 0; i < MEGAKI_AES_KEYBYTES; ++i)
     mastersymm[i] = (~srvsymm[i]) ^ clsymm[i];
 }
+
+int mgk_encode_message(byte* msg, length_t msglen, 
+    mgk_token_t token, const mgk_aes_key_t key, AES_KEY *schdkey,
+    byte* res, length_t *reslen)
+{
+  mgk_msghdr_t hdr;
+  int err = -2;
+  mgk_fill_magic(&hdr.preamble.header);
+  hdr.preamble.header.type = magic_msg;
+  hdr.preamble.length = htonl(msglen);
+
+  if (sizeof(mgk_msghdr_t) + MEGAKI_AES_ENCSIZE(msglen) > *reslen) {
+    err = -1;
+    goto failure;
+  }
+
+  if (RAND_bytes((unsigned char*) hdr.iv.data, MEGAKI_AES_BLOCK_BYTES) != 1) {
+    err = -1;
+    goto failure;
+  }
+
+  unsigned int ldummy;
+  /* Retarded dipshit libcrypto fucking mangles your fucking IV's */
+  byte tmpiv[MEGAKI_AES_BLOCK_BYTES];
+  memcpy(tmpiv, hdr.iv.data, MEGAKI_AES_BLOCK_BYTES);
+  memcpy(hdr.token.data, token.data, MEGAKI_TOKEN_BYTES);
+
+  AES_cbc_encrypt((unsigned char*) msg, (unsigned char*) res +
+      sizeof(mgk_msghdr_t), MEGAKI_AES_ENCSIZE(msglen), schdkey, (unsigned char*) 
+      (byte*) tmpiv, AES_ENCRYPT);
+  memcpy(res + offsetof(mgk_msghdr_t, iv), hdr.iv.data, MEGAKI_AES_BLOCK_BYTES);
+
+  if (!HMAC(EVP_sha256(), (unsigned char*) key.data, 
+        MEGAKI_AES_KEYBYTES, (unsigned char*) res + offsetof(mgk_msghdr_t, iv), 
+        MEGAKI_AES_ENCSIZE(msglen) + MEGAKI_AES_BLOCK_BYTES,
+        (unsigned char*) hdr.mac.data, &ldummy)) {
+    err = -1;
+    goto failure;
+  }
+  memcpy(res, &hdr, sizeof(mgk_msghdr_t));
+  *reslen = sizeof(mgk_msghdr_t) + MEGAKI_AES_ENCSIZE(msglen);
+
+  return( 0 );
+
+failure:
+  return( err );
+
+}
+
+int mgk_decode_message(const byte* msg, length_t msglen, 
+    mgk_token_t token, const mgk_aes_key_t key, AES_KEY *schdkey,
+    byte* res, length_t *reslen)
+{
+
+}
+
+

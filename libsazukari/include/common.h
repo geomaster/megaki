@@ -41,7 +41,6 @@ typedef enum loglevel {
 
 #define MEGAKI_TIMEFMT "%d/%b/%Y:%H:%M:%S %z"
 #define MEGAKI_TIMEBUF  30
-#ifdef DEBUG
 #define MEGAKI_FMTIME(s) \
   {   \
     struct tm ts; \
@@ -63,10 +62,4 @@ typedef enum loglevel {
     MEGAKI_FMTIME(s); \
     fprintf((file), "[" comp " %s] " fmt "\n", s, __VA_ARGS__); \
   } 
-#else
-#define MEGAKI_FMTIME(s)
-#define MEGAKI_LOGS(file, comp, str)
-#define MEGAKI_LOGF(file, comp, fmt, ...)
-#endif
-
 #endif

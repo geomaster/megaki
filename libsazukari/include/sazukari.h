@@ -1,7 +1,8 @@
 #ifndef __SAZUKARI_H__
 #define __SAZUKARI_H__
 #include "common.h"
-#define SAZUKARI_MIN_BUFSIZE            8448
+#define SAZUKARI_MESSAGE_HARD_LIMIT     1048576
+#define SAZUKARI_MIN_BUFFER_SENTINEL    128
 
 /** Sazukari public declarations **/
 typedef struct szkr_ctx_t szkr_ctx_t;
@@ -46,7 +47,7 @@ int        szkr_new_ctx(szkr_ctx_t* ctx, szkr_iostream_t ios,
 int        skzr_reset_ctx(szkr_ctx_t* ctx);
 int        szkr_do_handshake(szkr_ctx_t* ctx);
 szkr_err_t szkr_last_error(szkr_ctx_t* ctx);
-int        szkr_send_message(szkr_ctx_t*, const byte* msg, length_t msglen, 
+int        szkr_send_message(szkr_ctx_t*, byte* msg, length_t msglen, 
                              byte* responsebuf, length_t* responselen);
 void       szkr_destroy_ctx(szkr_ctx_t* ctx);
 void       szkr_destroy();
