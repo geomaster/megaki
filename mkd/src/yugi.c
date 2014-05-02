@@ -113,9 +113,9 @@ typedef struct conn_t {
   conn_node_t         *node;
   uv_timer_t          timeout_tmr;
   
-  #ifdef YUGI_DEBUG
+#ifdef YUGI_DEBUG
   char              dbg_id[ 10 ];
-  #endif
+#endif
 } conn_t;
 
 
