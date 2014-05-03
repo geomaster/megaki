@@ -25,7 +25,8 @@
 typedef struct szkr_ctx_t {
   mgk_token_t     token;
   mgk_aes_key_t   server_symmetric,
-                  master_symmetric;
+                  master_symmetric,
+                  ephemeral;
   RSA             *client_rsa,
                   *server_rsa;
   AES_KEY         kenc, kdec;
@@ -316,6 +317,11 @@ int assemble_syn(szkr_ctx_t* ctx, mgk_syn_t* osyn)
   SAZUKARI_ASSERT(BN_num_bytes(ctx->client_rsa->e) <= MEGAKI_RSA_EXPBYTES,
       "Not enough bytes to store the client RSA (e)");
 
+  if (!RAND_bytes((unsigned char*) synplain.eph_key.data, MEGAKI_AES_KEYBYTES)) {
+    goto failure;
+  }
+  memcpy(ctx->ephemeral.data, synplain.eph_key.data, MEGAKI_AES_KEYBYTES);
+
   if (BN_bn2bin(ctx->client_rsa->n, synplain.client_key.modulus + 
         (MEGAKI_RSA_KEYBYTES - BN_num_bytes(ctx->client_rsa->n))) <= 0) {
     goto failure;
@@ -371,19 +377,23 @@ szkr_err_t handle_synack(szkr_ctx_t* ctx, mgk_synack_t* isynack)
       "This is not implemented as it is not possible without severe "
       "changes to the protocol. Please implement later if needed.");
   
+  mgk_hash_t hmac;
+  unsigned int ldummy = MEGAKI_HASH_BYTES;
+  if (!HMAC(EVP_sha256(), (unsigned char*) ctx->ephemeral.data, MEGAKI_AES_KEYBYTES,
+        (unsigned char*) isynack->ciphertext[0].data, MEGAKI_RSA_KEYBYTES, 
+        (unsigned char*) hmac.data, &ldummy)) {
+    return( szkr_err_internal );
+  }
+
+  if (!mgk_memeql(hmac.data, isynack->mac.data, MEGAKI_HASH_BYTES))
+    return( szkr_err_protocol );
+
   if (!RSA_blinding_on(ctx->client_rsa, NULL))
     return( szkr_err_internal );
 
-  if (RSA_private_decrypt(MEGAKI_RSA_KEYBYTES, (unsigned char*) &isynack->ciphertext[0].data,
+  if (RSA_private_decrypt(MEGAKI_RSA_KEYBYTES, (unsigned char*) isynack->ciphertext[0].data,
         (unsigned char*) &plain, ctx->client_rsa, RSA_PKCS1_OAEP_PADDING)
       != sizeof(mgk_synack_plain_t)) {
-    res = szkr_err_protocol;
-    goto blind_off;
-  }
-
-  SHA256((unsigned char*) &plain, sizeof(mgk_synack_plain_t), 
-      (unsigned char*) myhash.data);
-  if (!mgk_memeql(isynack->hash.data, myhash.data, MEGAKI_HASH_BYTES)) {
     res = szkr_err_protocol;
     goto blind_off;
   }
@@ -453,8 +463,6 @@ int assemble_ack(szkr_ctx_t* ctx, mgk_ack_t* oack)
   }
   memcpy(oack->token.data, ctx->token.data, MEGAKI_TOKEN_BYTES);
   memcpy(plain->token.data, ctx->token.data, MEGAKI_TOKEN_BYTES);
-  SHA256((unsigned char*) plainb, sizeof(mgk_ack_plain_t),
-      (unsigned char*) oack->hash.data);
   memcpy(oack->iv.data, iv.data, MEGAKI_AES_BLOCK_BYTES);
 
   /* so there is no documentation on these functions whatsoever
@@ -468,6 +476,14 @@ int assemble_ack(szkr_ctx_t* ctx, mgk_ack_t* oack)
    */
   AES_cbc_encrypt((unsigned char*) plainb, (unsigned char*) oack->ciphertext,
       sizeof(plainb), &ctx->kenc, (unsigned char*) iv.data, AES_ENCRYPT);
+
+  mgk_hash_t hmac;
+  unsigned int ldummy = MEGAKI_HASH_BYTES;
+  if (!HMAC(EVP_sha256(), ctx->ephemeral.data, MEGAKI_AES_KEYBYTES, 
+        (unsigned char*) oack->ciphertext, sizeof(plainb), (unsigned char*)
+        oack->mac.data, &ldummy)) {
+    return( -1 );
+  }
 
   mgk_derive_master(ctx->server_symmetric.data, plain->client_symmetric.data,
       ctx->master_symmetric.data);

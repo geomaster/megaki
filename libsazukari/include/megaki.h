@@ -87,6 +87,7 @@ typedef struct pk mgk_aes_block_t {
 /** Plaintext of SYN ciphertext **/
 typedef struct pk mgk_syn_plain_t {
   mgk_rsa_key_t     client_key;
+  mgk_aes_key_t     eph_key;
   byte              version
                       [ MEGAKI_VERSION_BYTES ];
 } mgk_syn_plain_t;
@@ -111,7 +112,7 @@ typedef struct pk mgk_synack_plain_t {
 /** SYNACK packet **/
 typedef struct pk mgk_synack_t {
   mgk_header_t      header;
-  mgk_hash_t        hash;
+  mgk_hash_t        mac;
   mgk_token_t       token;
   mgk_rsa_block_t   ciphertext
                     [ MEGAKI_RSA_BLOCKCOUNT(
@@ -129,7 +130,7 @@ typedef struct pk mgk_ack_plain_t {
 /** ACK packet **/
 typedef struct pk mgk_ack_t {
   mgk_header_t      header;
-  mgk_hash_t        hash;
+  mgk_hash_t        mac;
   mgk_token_t       token;
   mgk_aes_block_t   iv,
                     ciphertext

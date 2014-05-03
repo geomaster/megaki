@@ -48,7 +48,8 @@ typedef struct yami_ctx_t {
   union {
     struct {
       tokentry* token;
-      mgk_aes_key_t server_symm;
+      mgk_aes_key_t server_symm,
+                    ephemeral;
     } synacks;
     
     struct {
@@ -101,7 +102,8 @@ void handle_syn(yami_ctx_t* ctx, yami_resp_t* resp, byte* buf);
 void handle_synack(yami_ctx_t* ctx, yami_resp_t* resp, byte* buf);
 void handle_ack(yami_ctx_t* ctx, yami_resp_t* resp, byte* buf);
 int  on_connect_successful(yami_ctx_t* ctx, byte* ctxdata);
-int  assemble_synack(yami_ctx_t* ctx, RSA* clrsa, mgk_synack_t* res, const byte* err);
+int  assemble_synack(yami_ctx_t* ctx, RSA* clrsa, mgk_synack_t* res, 
+    mgk_aes_key_t ephkey, const byte* err);
 void handle_msg(yami_ctx_t* ctx, yami_resp_t* resp, byte* buf, length_t len);
 /** End prototypes for internal procedures **/
 
@@ -373,7 +375,7 @@ void handle_syn(yami_ctx_t* ctx, yami_resp_t* resp, byte* buffer)
   
   if (!mgk_memeql(plain->version, MEGAKI_VERSION, MEGAKI_VERSION_BYTES)) {
     YAMI_DIAGLOGS("Mismatching versions, issuing SYN-ACK-ERR");
-    if (assemble_synack(ctx, clrsa, (mgk_synack_t*) buffer,
+    if (assemble_synack(ctx, clrsa, (mgk_synack_t*) buffer, plain->eph_key,
                         MEGAKI_INCOMPATIBLE_VERSIONS_ERROR) != 0) {
       YAMI_DIAGLOGS("Could not assemble SYN-ACK-ERR");
     } else {
@@ -384,7 +386,7 @@ void handle_syn(yami_ctx_t* ctx, yami_resp_t* resp, byte* buffer)
   
   
   YAMI_DIAGLOGS("SYN ok");
-  if (assemble_synack(ctx, clrsa, (mgk_synack_t*) buffer, NULL) != 0) {
+  if (assemble_synack(ctx, clrsa, (mgk_synack_t*) buffer, plain->eph_key, NULL) != 0) {
     YAMI_DIAGLOGS("Failed to assemble SYN-ACK");
     goto destroy_rsa;
   } else {
@@ -410,7 +412,8 @@ kill_connection:
   resp->end_connection = 1;
 }
 
-int assemble_synack(yami_ctx_t* ctx, RSA* clrsa, mgk_synack_t* res, const byte* err)
+int assemble_synack(yami_ctx_t* ctx, RSA* clrsa, mgk_synack_t* res, 
+    mgk_aes_key_t ephkey, const byte* err)
 {
   mgk_synack_plain_t plain;
   YAMI_DIAGLOGS("Assembling SYN-ACK");
@@ -442,7 +445,6 @@ int assemble_synack(yami_ctx_t* ctx, RSA* clrsa, mgk_synack_t* res, const byte* 
     memcpy(plain.token.data, MEGAKI_ERROR_TOKEN, MEGAKI_TOKEN_BYTES);
     memcpy(plain.server_symmetric.data, err, MEGAKI_ERROR_CODE_BYTES);
   }
-  SHA256((void*) &plain, sizeof(mgk_synack_plain_t), res->hash.data);
   
   YAMI_ASSERT(MEGAKI_RSA_BLOCKCOUNT(sizeof(mgk_synack_plain_t)) == 1, 
               "No more than one block here is permitted");
@@ -458,7 +460,15 @@ int assemble_synack(yami_ctx_t* ctx, RSA* clrsa, mgk_synack_t* res, const byte* 
     YAMI_DIAGLOGS("Could not encrypt with client public key");
     goto blind_off;
   }
- 
+
+  unsigned int ldummy = MEGAKI_HASH_BYTES;
+  if (!HMAC(EVP_sha256(), (unsigned char*) ephkey.data, MEGAKI_AES_KEYBYTES, (unsigned char*) 
+        res->ciphertext[0].data, MEGAKI_RSA_KEYBYTES, (unsigned char*) res->mac.data, &ldummy)) {
+    YAMI_DIAGLOGS("Could not compute HMAC");
+    goto blind_off;
+  }
+  memcpy(ctx->x.synacks.ephemeral.data, &ephkey, MEGAKI_AES_KEYBYTES);
+
   YAMI_DIAGLOGS("SYN-ACK assembled");
   return(0);
   
@@ -485,6 +495,21 @@ void handle_ack(yami_ctx_t* ctx, yami_resp_t* resp, byte* buffer)
     YAMI_DIAGLOGS("Token mismatch");
     goto kill_connection;
   }
+
+  mgk_hash_t hmac;
+  unsigned int ldummy = MEGAKI_HASH_BYTES;
+  if (!HMAC(EVP_sha256(), (unsigned char*) ctx->x.synacks.ephemeral.data,
+        MEGAKI_AES_KEYBYTES, (unsigned char*) ack->ciphertext,
+        MEGAKI_AES_ENCSIZE(sizeof(mgk_synack_plain_t)), (unsigned char*) hmac.data,
+        &ldummy)) {
+    YAMI_DIAGLOGS("Could not compute HMAC");
+    goto kill_connection;
+  }
+  
+  if (!mgk_memeql(ack->mac.data, hmac.data, MEGAKI_HASH_BYTES)) {
+   YAMI_DIAGLOGS("Bad HMAC"); 
+   goto kill_connection;
+  }
   
   AES_KEY srvdec;
   tokentry* tok = ctx->x.synacks.token;
@@ -498,13 +523,7 @@ void handle_ack(yami_ctx_t* ctx, yami_resp_t* resp, byte* buffer)
   AES_cbc_encrypt((unsigned char*) ack->ciphertext, (unsigned char*) x.plaind,
                   MEGAKI_AES_ENCSIZE(sizeof(mgk_ack_plain_t)), &srvdec,
                   (unsigned char*)ack->iv.data, AES_DECRYPT);
-  SHA256((unsigned char*) plain, sizeof(mgk_ack_plain_t),
-         (unsigned char*)hash.data);
-  if (!mgk_memeql(ack->hash.data, hash.data, MEGAKI_HASH_BYTES)) {
-   YAMI_DIAGLOGS("Bad hash"); 
-   goto kill_connection;
-  }
-  
+ 
   if (!mgk_memeql(ack->token.data, plain->token.data, MEGAKI_TOKEN_BYTES)) {
     YAMI_DIAGLOGS("Plaintext-ciphertext token mismatch");
     goto kill_connection;
