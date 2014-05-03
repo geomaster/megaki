@@ -20,7 +20,7 @@
   ((MEGAKI_RSA_KEYBYTES) * MEGAKI_RSA_BLOCKCOUNT(B))
 
 #define MEGAKI_MSGSIZE(B)                 \
-  (sizeof(mgk_msghdr_t) + MEGAKI_AES_ENCSIZE(B)
+  (sizeof(mgk_msghdr_t) + MEGAKI_AES_ENCSIZE(B))
 
 #define pk __attribute__((__packed__))
 
