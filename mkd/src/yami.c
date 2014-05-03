@@ -499,9 +499,9 @@ void handle_ack(yami_ctx_t* ctx, yami_resp_t* resp, byte* buffer)
   mgk_hash_t hmac;
   unsigned int ldummy = MEGAKI_HASH_BYTES;
   if (!HMAC(EVP_sha256(), (unsigned char*) ctx->x.synacks.ephemeral.data,
-        MEGAKI_AES_KEYBYTES, (unsigned char*) ack->ciphertext,
-        MEGAKI_AES_ENCSIZE(sizeof(mgk_synack_plain_t)), (unsigned char*) hmac.data,
-        &ldummy)) {
+        MEGAKI_AES_KEYBYTES, (unsigned char*) ack->iv.data,
+        MEGAKI_AES_ENCSIZE(sizeof(mgk_synack_plain_t)) + MEGAKI_AES_BLOCK_BYTES,
+        (unsigned char*) hmac.data, &ldummy)) {
     YAMI_DIAGLOGS("Could not compute HMAC");
     goto kill_connection;
   }

@@ -476,15 +476,17 @@ int assemble_ack(szkr_ctx_t* ctx, mgk_ack_t* oack)
    */
   AES_cbc_encrypt((unsigned char*) plainb, (unsigned char*) oack->ciphertext,
       sizeof(plainb), &ctx->kenc, (unsigned char*) iv.data, AES_ENCRYPT);
-
+  memcpy(iv.data, oack->iv.data, MEGAKI_AES_BLOCK_BYTES);
+  
   mgk_hash_t hmac;
   unsigned int ldummy = MEGAKI_HASH_BYTES;
   if (!HMAC(EVP_sha256(), ctx->ephemeral.data, MEGAKI_AES_KEYBYTES, 
-        (unsigned char*) oack->ciphertext, sizeof(plainb), (unsigned char*)
-        oack->mac.data, &ldummy)) {
+        (unsigned char*) oack->iv.data, sizeof(plainb) + MEGAKI_AES_BLOCK_BYTES, 
+        (unsigned char*) oack->mac.data, &ldummy)) {
     return( -1 );
   }
 
+  memcpy(oack->iv.data, iv.data, MEGAKI_AES_BLOCK_BYTES);
   mgk_derive_master(ctx->server_symmetric.data, plain->client_symmetric.data,
       ctx->master_symmetric.data);
 
