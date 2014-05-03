@@ -21,3 +21,7 @@ libsazukari/tests/*
 
 # ignore gcc expansion files
 *.expand
+
+# ignore graphview files, these can be generated
+# by egypt
+*.gv
