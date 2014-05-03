@@ -18,7 +18,10 @@
   
 #define MEGAKI_RSA_ENCSIZE(B)             \
   ((MEGAKI_RSA_KEYBYTES) * MEGAKI_RSA_BLOCKCOUNT(B))
-  
+
+#define MEGAKI_MSGSIZE(B)                 \
+  (sizeof(mgk_msghdr_t) + MEGAKI_AES_ENCSIZE(B)
+
 #define pk __attribute__((__packed__))
 
 extern const byte MEGAKI_VERSION[MEGAKI_VERSION_BYTES];
@@ -35,8 +38,10 @@ typedef enum mgk_packet_type {
   magic_ack = 0x03,
   magic_msg = 0x04,
   magic_msg_err = 0xE4,
-  magic_restart = 0x05,
-  magic_ackack = 0x06
+  magic_msg_rstor = 0x05,
+  magic_msg_rstorack = 0x06,
+  magic_req_rehs = 0x07,
+  magic_ackack = 0x08
 } mgk_magic_type;
 
 /** Header of every packet **/
@@ -158,6 +163,21 @@ typedef struct pk mgk_msghdr_t {
   mgk_hash_t        mac;
   mgk_aes_block_t   iv;
 } mgk_msghdr_t;
+
+/* Message contents for RSTOR */
+typedef struct pk mgk_msgrstor_plain_t {
+  mgk_aes_key_t     client_key_augment;
+} mgk_msgrstor_plain_t;
+
+/* Message contents for RSTOR-ACK */
+typedef struct pk mgk_msgrstorack_plain_t {
+  mgk_aes_key_t     server_key_augment;
+} mgk_msgrstorack_plain_t;
+
+/* Message contents for a rehandshake request */
+typedef struct pk mgk_rehandshake_req_t {
+  mgk_header_t      header;
+} mgk_rehandshake_req_t;
 
 int mgk_memeql(const byte*, const byte*, length_t);
 int mgk_check_magic(const mgk_header_t* hdr);

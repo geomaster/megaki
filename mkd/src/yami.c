@@ -290,7 +290,7 @@ int yami_get_packetlen(yami_ctx_t* ctx, byte* header, length_t* len)
     
       /* expect full message header (incl. this preamble) and 
        * bytes announced */
-      *len = sizeof(mgk_msghdr_t) + MEGAKI_AES_ENCSIZE(msglen);
+      *len = MEGAKI_MSGSIZE(msglen);
       return(1);
   }
   return(0);
@@ -564,7 +564,7 @@ kill_connection:
 void handle_msg(yami_ctx_t* ctx, yami_resp_t* resp, byte* buf, length_t len)
 {
   length_t msglen = ntohl(((mgk_msgpreamble_t*) buf)->length);
-  if (len != sizeof(mgk_msghdr_t) + MEGAKI_AES_ENCSIZE(msglen)) {
+  if (len != MEGAKI_MSGSIZE(msglen)) {
     YAMI_DIAGLOGS("Received message length / advertised message length mismatch");
     goto kill_connection;
   }
