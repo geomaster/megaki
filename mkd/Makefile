@@ -51,7 +51,7 @@ docs/mkd-callgraph.gv: $(OBJ)
 	egypt obj/*.expand > docs/mkd-callgraph.gv
 	
 bin/mkd: $(OBJ)         
-	gcc -o $@ $^ $(CFLAGS) $(LIBS)
+	$(CC) -o $@ $^ $(CFLAGS) $(LIBS)
 	
 obj/%.o: src/%.c $(HEADERS)
 	$(CC) -c -o $@ $< $(CFLAGS)
