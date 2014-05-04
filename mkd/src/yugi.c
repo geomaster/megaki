@@ -257,14 +257,14 @@ int yugi_start(yugi_t* yc)
                        yc->config.watchdog_interval,
                        yc->config.watchdog_interval);
   if (res != 0) {
-    YUGI_LOGF(LOG_ERROR, "Could not start watchdog timer (%s)", uv_strerror(res));
+    YUGI_LOGF(LOG_FATAL, "Could not start watchdog timer (%s)", uv_strerror(res));
     goto failure;
   }
   
   struct sockaddr_in addr;
   res = uv_ip4_addr(yc->config.listen_address, yc->config.listen_port, &addr);
   if (res != 0) {
-    YUGI_LOGF(LOG_ERROR, "Could not resolve local hostname %s:%d (%s)",
+    YUGI_LOGF(LOG_FATAL, "Could not resolve local hostname %s:%d (%s)",
       yc->config.listen_address, yc->config.listen_port, uv_strerror(res));
     goto failure;
   }
@@ -272,13 +272,13 @@ int yugi_start(yugi_t* yc)
   res = uv_tcp_init(l, &yc->uv_servconn);
   yc->uv_servconn.data = (void*) yc;
   if (res != 0) {
-    YUGI_LOGF(LOG_ERROR, "Could not initialize TCP handle (%s)", uv_strerror(res));
+    YUGI_LOGF(LOG_FATAL, "Could not initialize TCP handle (%s)", uv_strerror(res));
     goto failure;
   }
   
   res = uv_tcp_bind(&yc->uv_servconn, (struct sockaddr*) &addr, 0);
   if (res != 0) {
-    YUGI_LOGF(LOG_ERROR, "Could not bind to %s:%d, is someone else already "
+    YUGI_LOGF(LOG_FATAL, "Could not bind to %s:%d, is someone else already "
       "bound there? (%s)", yc->config.listen_address, yc->config.listen_port, uv_strerror(res));
     goto failure;
   }
@@ -286,7 +286,7 @@ int yugi_start(yugi_t* yc)
   res = uv_listen((uv_stream_t*) &yc->uv_servconn, yc->config.socket_backlog,
     &on_client_connect);
   if (res != 0) {
-    YUGI_LOGF(LOG_ERROR, "Could not listen on local address (%s)", uv_strerror(res));
+    YUGI_LOGF(LOG_FATAL, "Could not listen on local address (%s)", uv_strerror(res));
     goto failure;
   }
   
@@ -294,6 +294,11 @@ int yugi_start(yugi_t* yc)
     uv_version_string(), yc->config.listen_address, yc->config.listen_port);
     
   res = uv_run(yc->uv_loop, UV_RUN_DEFAULT);
+  if (res != 0) {
+    YUGI_LOGS(LOG_FATAL, "Could not start libuv event loop");
+    goto failure;
+  }
+
   YUGI_LOGS(LOG_NOTICE, "Main loop stopped");
   
   /* TODO: Cleanup when the loop quits! */
@@ -632,7 +637,7 @@ void async_cb_write_data(uv_async_t* handle)
     YUGI_LOGCONNS(c, "Writing failed");
 #endif
     if (c->yami_resp.uses_new_buffer)
-      free(buf);
+      free(c->yami_resp.new_buffer);
     
     release_connection(c);
     free(req); 
@@ -807,8 +812,8 @@ unlock_mut:
   YUGI_NONFAIL(sem_post(&c->recvmut) == 0);
 
 dealloc_dynrecvbuf:
-  if (dynrecvbuf) {
-    free(dynrecvbuf);
+  if (c->dynrecvbuf) {
+    free(c->dynrecvbuf);
     c->dynrecvbuf = NULL;
   }
 close_conn:
@@ -867,11 +872,11 @@ void job_handle_message(void* data)
     }
   }
  
-dealloc_yamibuf:
+/* dealloc_yamibuf: */
   if (resp.uses_new_buffer)
     free(resp.new_buffer);
 
-quit:
+/* quit: */
   release_connection(c);
 }
 

@@ -486,7 +486,6 @@ void handle_ack(yami_ctx_t* ctx, yami_resp_t* resp, byte* buffer)
     byte plaind[ MEGAKI_AES_ENCSIZE(sizeof(mgk_ack_plain_t)) ];
     mgk_aes_key_t mastersymm;
   } x;
-  mgk_hash_t hash;
   const mgk_ack_plain_t *plain = (mgk_ack_plain_t*) x.plaind;
   
   YAMI_DIAGLOGS("Handling ACK");

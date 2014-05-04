@@ -25,15 +25,17 @@ int broker(void* param)
   signal(SIGINT, SIG_IGN);
   signal(SIGPIPE, SIG_IGN);
   
+  byte* ppp = NULL;
+
   fprintf(stderr, "Broker starts\n");
   fflush(stderr);
   while (1)  {
     pegasus_req_hdr_t req;
-    pegasus_quit_resp_t resp;
     if (read(STDIN_FILENO, &req, sizeof(pegasus_req_hdr_t)) != sizeof(pegasus_req_hdr_t))
       goto die;
 
     pegasus_resp_hdr_t rsphdr;
+    rsphdr.type = 0xFF;
     if (req.type == PEGASUS_REQ_START) {
       pegasus_start_req_t streq;
       if (read(STDIN_FILENO, &streq, sizeof(pegasus_start_req_t)) != sizeof(pegasus_start_req_t))
@@ -60,7 +62,7 @@ int broker(void* param)
         goto die;
 
       rsphdr.type = PEGASUS_RESP_HANDLE_OK;
-      byte* ppp = malloc(256*1024);
+      ppp = malloc(256*1024);
       assert(hreq.msgsize < 256*1024);
       if (read(STDIN_FILENO, ppp, hreq.msgsize) != hreq.msgsize)
         goto die;
@@ -70,6 +72,7 @@ int broker(void* param)
       fprintf(stderr, "\n");
 
       free(ppp);
+      ppp = NULL;
     }
     write(STDOUT_FILENO, &rsphdr, sizeof(pegasus_resp_hdr_t));
     if (rsphdr.type == PEGASUS_RESP_HANDLE_OK) {
@@ -84,6 +87,8 @@ int broker(void* param)
 
 die:
   fprintf(stderr, "Broker dead for some reason");
+  if (ppp)
+    free(ppp);
   fflush(stderr);
   return( 0 );
 }
