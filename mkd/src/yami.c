@@ -261,7 +261,7 @@ yami_resp_t yami_incoming(yami_ctx_t* ctx, byte* buffer, length_t length)
         YAMI_DIAGLOGS("Unexpected MSG-RSTOR packet");
         goto kill_connection;
       }
-      break;
+      break; 
 
     default:
       YAMI_DIAGLOGS("Unexpected packet type");
@@ -466,6 +466,7 @@ void handle_rstor(yami_ctx_t* ctx, yami_resp_t* resp, byte* buf)
     goto kill_connection;
   }
 
+  tok_renew(t);
   YAMI_DIAGLOGS("Alright, everything fine... But I don't know what I should do next.");
   
   return ;
