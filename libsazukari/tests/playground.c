@@ -53,7 +53,7 @@ int main(int argc, char** argv)
 
   byte*stuff = malloc(32768);
   int i;
-  for (i = 0; i < 32768; ++i)
+  for (i = 0; i < 64; ++i)
     stuff[i] = (i % 10) + '0';
 
   RSA* srv = RSA_new();
@@ -65,7 +65,7 @@ int main(int argc, char** argv)
   if (szkr_do_handshake(ctx) == 0) {
     printf("success!\n");
     char msg[] = "hello world!", dummy[ 100 ];
-    szkr_send_message(ctx, stuff, 32768, NULL, NULL);
+    szkr_send_message(ctx, stuff, 64, NULL, NULL);
     while(1){sleep(10);}
   }
 

@@ -45,6 +45,12 @@ typedef struct szkr_msg_t {
   mgk_msghdr_t    hdr;
   byte            data[ MEGAKI_AES_ENCSIZE(MEGAKI_MAX_MSGSIZE) ];
 } szkr_msg_t;
+
+typedef struct szkr_session_data_t {
+  mgk_token_t     token;
+  mgk_aes_key_t   master_key;
+} szkr_session_data_t;
+
 /** End definitions of Sazukari objects **/
 
 /** Sazukari internal functions **/
@@ -183,6 +189,69 @@ failure:
   return(-1);
 }
 
+length_t szkr_get_session_data_size()
+{
+  return sizeof( szkr_session_data_t );
+}
+
+int szkr_get_session_data(szkr_ctx_t* ctx, byte* sdata, length_t* len)
+{
+  if (*len < sizeof(szkr_session_data_t))
+    return( -1 );
+
+  if (ctx->state != state_ready)
+    return( -1 ); /* we haven't done a handshake! */
+
+  szkr_session_data_t* data = (szkr_session_data_t*) sdata;
+  memcpy(data->token.data, ctx->token.data, MEGAKI_TOKEN_BYTES);
+  memcpy(data->master_key.data, ctx->master_symmetric.data, MEGAKI_AES_KEYBYTES);
+  
+  return( 0 );
+}
+
+int szkr_resume_session(szkr_ctx_t* ctx, const byte* sdata)
+{
+  szkr_err_t err = szkr_err_none;
+  szkr_session_data_t* data = (szkr_session_data_t*) sdata;
+
+  length_t encmsglen = MEGAKI_MSGSIZE(sizeof(mgk_msgrstor_plain_t));
+  byte msg[MEGAKI_MSGSIZE(sizeof(mgk_msgrstor_plain_t))];
+
+  mgk_msgrstor_plain_t rmsg;
+  if (!RAND_bytes((unsigned char*) rmsg.client_key_augment.data,
+        MEGAKI_AES_KEYBYTES)) {
+    err = szkr_err_internal;
+    goto failure;
+  }
+
+  AES_KEY aes_enc;
+  if (AES_set_encrypt_key((unsigned char*) data->master_key.data,
+        MEGAKI_AES_KEYSIZE, &aes_enc) != 0) {
+    err = szkr_err_internal;
+    goto failure;
+  }
+
+  if (mgk_encode_message((byte*) &rmsg, sizeof(mgk_msgrstor_plain_t),
+        data->token, data->master_key, &aes_enc, msg, &encmsglen) != 0) {
+    err = szkr_err_internal;
+    goto failure;
+  }
+  ((mgk_msghdr_t*)msg)->preamble.header.type = magic_msg_rstor;
+
+  if (!write_packet(&ctx->ios, msg, encmsglen)) {
+    err = szkr_err_io;
+    goto failure;
+  }
+
+  /* byte response[ */
+  ctx->last_err = szkr_err_none;
+  return( 0 );
+
+failure:
+  ctx->last_err = err;
+  return( -1 );
+}
+
 int szkr_send_message(szkr_ctx_t* ctx, byte* msg, length_t msglen,
                      byte* responsebuf, length_t* responselen)
 {
@@ -197,7 +266,7 @@ int szkr_send_message(szkr_ctx_t* ctx, byte* msg, length_t msglen,
 
   RAND_pseudo_bytes(msg + msglen, encoded_len - msglen);
 
-  length_t bufsize = sizeof(mgk_msghdr_t) + encoded_len;
+  length_t bufsize = MEGAKI_MSGSIZE(encoded_len);
   byte* outbuf = malloc(bufsize);
   if (!outbuf) {
     err = szkr_err_internal;
@@ -366,7 +435,6 @@ failure:
 szkr_err_t handle_synack(szkr_ctx_t* ctx, mgk_synack_t* isynack)
 {
   mgk_synack_plain_t plain;
-  mgk_hash_t myhash;
 
   szkr_err_t res = szkr_err_unknown;
 
@@ -478,7 +546,6 @@ int assemble_ack(szkr_ctx_t* ctx, mgk_ack_t* oack)
       sizeof(plainb), &ctx->kenc, (unsigned char*) iv.data, AES_ENCRYPT);
   memcpy(iv.data, oack->iv.data, MEGAKI_AES_BLOCK_BYTES);
   
-  mgk_hash_t hmac;
   unsigned int ldummy = MEGAKI_HASH_BYTES;
   if (!HMAC(EVP_sha256(), ctx->ephemeral.data, MEGAKI_AES_KEYBYTES, 
         (unsigned char*) oack->iv.data, sizeof(plainb) + MEGAKI_AES_BLOCK_BYTES, 

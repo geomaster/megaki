@@ -22,7 +22,7 @@ typedef enum szkr_err_t {
   szkr_err_protocol,
   szkr_err_internal,
   szkr_err_io,
-  szkr_err_rehandshake_needed,
+  szkr_err_handshake_needed,
   szkr_err_server_blacklisted,
   szkr_err_message_too_long
 } szkr_err_t;
@@ -46,9 +46,13 @@ int        szkr_new_ctx(szkr_ctx_t* ctx, szkr_iostream_t ios,
                         szkr_srvkey_t srvkey);
 int        skzr_reset_ctx(szkr_ctx_t* ctx);
 int        szkr_do_handshake(szkr_ctx_t* ctx);
+int        szkr_resume_session(szkr_ctx_t* ctx, const byte* sdata);
 szkr_err_t szkr_last_error(szkr_ctx_t* ctx);
 int        szkr_send_message(szkr_ctx_t*, byte* msg, length_t msglen, 
                              byte* responsebuf, length_t* responselen);
+int        szkr_get_session_data(szkr_ctx_t* ctx, byte* sdata, 
+                                 length_t* len);
+length_t   szkr_get_session_data_size();
 void       szkr_destroy_ctx(szkr_ctx_t* ctx);
 void       szkr_destroy();
 /** End Sazukari public API **/
