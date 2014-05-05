@@ -132,6 +132,10 @@ int mgk_decode_message(const byte* msg, length_t msglen,
   if (length > *reslen)
     return( -3 );
 
+  if (!mgk_check_magic(&hdr->preamble.header)) {
+    goto proto_error;
+  }
+
   if (sizeof(mgk_msghdr_t) + length != msglen) {
     goto proto_error;
   }
