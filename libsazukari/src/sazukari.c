@@ -255,7 +255,6 @@ failure:
 int szkr_send_message(szkr_ctx_t* ctx, byte* msg, length_t msglen,
                      byte* responsebuf, length_t* responselen)
 {
-  szkr_msg_t smsg;
   szkr_err_t err;
 
   length_t encoded_len = MEGAKI_AES_ENCSIZE(msglen);

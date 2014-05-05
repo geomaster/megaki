@@ -99,6 +99,7 @@ length_t yami__pegasusctxsize;
 
 /** Prototypes for internal procedures **/
 void handle_syn(yami_ctx_t* ctx, yami_resp_t* resp, byte* buf);
+void handle_rstor(yami_ctx_t* ctx, yami_resp_t* resp, byte* buf);
 void handle_synack(yami_ctx_t* ctx, yami_resp_t* resp, byte* buf);
 void handle_ack(yami_ctx_t* ctx, yami_resp_t* resp, byte* buf);
 int  on_connect_successful(yami_ctx_t* ctx, byte* ctxdata);
@@ -253,6 +254,15 @@ yami_resp_t yami_incoming(yami_ctx_t* ctx, byte* buffer, length_t length)
       
       break;
       
+    case magic_msg_rstor:
+      if (ctx->state == MGS_WAITING_SYN)
+        handle_rstor(ctx, &resp, buffer);
+      else {
+        YAMI_DIAGLOGS("Unexpected MSG-RSTOR packet");
+        goto kill_connection;
+      }
+      break;
+
     default:
       YAMI_DIAGLOGS("Unexpected packet type");
       goto kill_connection;
@@ -292,6 +302,11 @@ int yami_get_packetlen(yami_ctx_t* ctx, byte* header, length_t* len)
        * bytes announced */
       *len = MEGAKI_MSGSIZE(msglen);
       return(1);
+
+    case magic_msg_rstor:
+      *len = MEGAKI_MSGSIZE(sizeof(mgk_msgrstor_plain_t));
+      return(1);
+
   }
   return(0);
 }
@@ -408,6 +423,53 @@ destroy_exponent:
 destroy_modulus:
   BN_free(modulus);
   
+kill_connection:
+  resp->end_connection = 1;
+}
+
+void handle_rstor(yami_ctx_t* ctx, yami_resp_t* resp, byte* buf)
+{ 
+  resp->end_connection = 0;
+  mgk_msghdr_t* hdr = (mgk_msghdr_t*)buf;
+  mgk_msgrstor_plain_t rstor_plain;
+
+  YAMI_DIAGLOGS("Handling MSG-RSTOR");
+
+  if (!mgk_check_magic(&hdr->preamble.header)) {
+    YAMI_DIAGLOGS("Invalid magic");
+    goto kill_connection;
+  }
+
+  tokentry* t = tok_find(hdr->token.data);
+  if (!t) {
+    mgk_rehandshake_req_t *rhr = (mgk_rehandshake_req_t*) buf;
+    mgk_fill_magic(&rhr->header);
+    rhr->header.type = magic_req_rehs;
+
+    resp->data_size = sizeof(mgk_rehandshake_req_t);
+    ctx->state = MGS_WAITING_SYN;
+    return ;
+  }
+
+  byte* key = t->payload;
+  AES_KEY kenc;
+  if (AES_set_decrypt_key((unsigned char*) key, MEGAKI_AES_KEYSIZE, &kenc) != 0) {
+    YAMI_DIAGLOGS("Could not initialize AES decryption key");
+    goto kill_connection;
+  }
+  
+  length_t retlen = sizeof(mgk_msgrstor_plain_t);
+  int ret;
+  if ((ret = mgk_decode_message(buf, MEGAKI_MSGSIZE(sizeof(mgk_msgrstor_plain_t)), hdr->token,
+        *(mgk_aes_key_t*)key, &kenc, (byte*) &rstor_plain, &retlen)) != 0) {
+    YAMI_DIAGLOGF("Could not decode message, return code %d", ret);
+    goto kill_connection;
+  }
+
+  YAMI_DIAGLOGS("Alright, everything fine... But I don't know what I should do next.");
+  
+  return ;
+
 kill_connection:
   resp->end_connection = 1;
 }

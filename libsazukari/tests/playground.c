@@ -43,7 +43,6 @@ int main(int argc, char** argv)
     close(sfd);
   }
 
-  freeaddrinfo(result);
 
   int sz = szkr_get_ctxsize();
   szkr_ctx_t* ctx = (szkr_ctx_t*) malloc(sz);
@@ -62,12 +61,28 @@ int main(int argc, char** argv)
   BN_bn2bin(srv->n, srvkey.modulus);
   BN_bn2bin(srv->e, srvkey.exponent + MEGAKI_RSA_EXPBYTES - BN_num_bytes(srv->e));   
   szkr_new_ctx(ctx, ios, srvkey);
+
+  length_t len = 1024;
+  byte sdata[1024];
   if (szkr_do_handshake(ctx) == 0) {
     printf("success!\n");
     char msg[] = "hello world!", dummy[ 100 ];
     szkr_send_message(ctx, stuff, 64, NULL, NULL);
+    szkr_get_session_data(ctx, sdata, &len);
+
+    sleep(2);
+    printf("on to step 2\n");
+    close(sfd);
+    sfd = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
+    if (connect(sfd, rp->ai_addr, rp->ai_addrlen) == -1) {
+      printf("could not connect :(");
+      return(0);
+    }
+
+    szkr_resume_session(ctx, sdata);
     while(1){sleep(10);}
   }
 
+  freeaddrinfo(result);
   return(0);
 }
