@@ -11,7 +11,8 @@ typedef struct tokentry {
 
 int tokinit(unsigned int maxtoks, unsigned int maxbuckets);
 tokentry* tok_create(byte* token);
-tokentry* tok_renew(byte* token);
+void tok_renew(tokentry* entry);
+tokentry* tok_find(byte* token);
 void tokshutdown();
 
 #endif

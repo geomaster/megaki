@@ -200,7 +200,7 @@ tokentry* tok_create(byte* token)
     ++tokencount;
   }
   
-  bucket_sanity("after pop", -1);
+  /* bucket_sanity("after pop", -1); */
   
   tokintentry *e = tokenlist + i;
   e->time = gettimestamp();
@@ -229,23 +229,29 @@ tokentry* tok_create(byte* token)
     f->next = tb;
   }
   
-  bucket_sanity("after all", 0);
+  /* bucket_sanity("after all", 0); */
   
   pthread_mutex_unlock(&tokmut);
   return(&e->entry);
 }
 
-tokentry* tok_renew(byte* token)
+void tok_renew(tokentry* te)
+{
+  pthread_mutex_lock(&tokmut);
+  tokintentry* entry = (tokintentry*)te; 
+  entry->time = gettimestamp();
+  heapifydown(entry->heapidx);
+  pthread_mutex_unlock(&tokmut);
+}
+
+tokentry* tok_find(byte* token)
 {
   pthread_mutex_lock(&tokmut);
   tokenbucket* tb = find(token, NULL);
+  pthread_mutex_unlock(&tokmut);
   if (!tb) {
-    pthread_mutex_unlock(&tokmut);
-    return NULL;
+    return( NULL );
   } else {
-    tokenlist[tb->i].time = gettimestamp();
-    heapifydown(tokenlist[tb->i].heapidx);
-    pthread_mutex_unlock(&tokmut);
     return (tokentry*)&tokenlist[tb->i];
   }
 }
