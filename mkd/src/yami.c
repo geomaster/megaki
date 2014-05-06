@@ -105,6 +105,8 @@ void handle_ack(yami_ctx_t* ctx, yami_resp_t* resp, byte* buf);
 int  on_connect_successful(yami_ctx_t* ctx, byte* ctxdata);
 int  assemble_synack(yami_ctx_t* ctx, RSA* clrsa, mgk_synack_t* res, 
     mgk_aes_key_t ephkey, const byte* err);
+int  assemble_rstorack(yami_ctx_t* ctx, byte* outbuf, mgk_token_t token,
+    mgk_aes_key_t masterkey, mgk_aes_key_t client_augment, byte* out_newkey);
 void handle_msg(yami_ctx_t* ctx, yami_resp_t* resp, byte* buf, length_t len);
 /** End prototypes for internal procedures **/
 
@@ -440,6 +442,12 @@ void handle_rstor(yami_ctx_t* ctx, yami_resp_t* resp, byte* buf)
     goto kill_connection;
   }
 
+
+  if (ntohl(hdr->preamble.length) != sizeof(mgk_msgrstor_plain_t)) {
+    YAMI_DIAGLOGS("Advertised RSTOR message size mismatch");
+    goto kill_connection;
+  }
+
   tokentry* t = tok_find(hdr->token.data);
   if (!t) {
     mgk_rehandshake_req_t *rhr = (mgk_rehandshake_req_t*) buf;
@@ -451,9 +459,10 @@ void handle_rstor(yami_ctx_t* ctx, yami_resp_t* resp, byte* buf)
     return ;
   }
 
-  byte* key = t->payload;
-  AES_KEY kenc;
-  if (AES_set_decrypt_key((unsigned char*) key, MEGAKI_AES_KEYSIZE, &kenc) != 0) {
+  /* previous master key */
+  byte* pmkey = t->payload;
+  AES_KEY kdec;
+  if (AES_set_decrypt_key((unsigned char*) pmkey, MEGAKI_AES_KEYSIZE, &kdec) != 0) {
     YAMI_DIAGLOGS("Could not initialize AES decryption key");
     goto kill_connection;
   }
@@ -461,20 +470,83 @@ void handle_rstor(yami_ctx_t* ctx, yami_resp_t* resp, byte* buf)
   length_t retlen = sizeof(mgk_msgrstor_plain_t);
   int ret;
   if ((ret = mgk_decode_message(buf, MEGAKI_MSGSIZE(sizeof(mgk_msgrstor_plain_t)), hdr->token,
-        *(mgk_aes_key_t*)key, &kenc, (byte*) &rstor_plain, &retlen)) != 0) {
+        *(mgk_aes_key_t*)pmkey, &kdec, (byte*) &rstor_plain, &retlen)) != 0) {
     YAMI_DIAGLOGF("Could not decode message, return code %d", ret);
     goto kill_connection;
   }
 
   tok_renew(t);
-  YAMI_DIAGLOGS("Alright, everything fine... But I don't know what I should do next.");
-  
+  mgk_token_t tok;
+  memcpy(tok.data, t->token, MEGAKI_TOKEN_BYTES);
+
+  mgk_aes_key_t new_master;
+  if (assemble_rstorack(ctx, buf, tok, *(mgk_aes_key_t*) pmkey,
+        rstor_plain.client_key_augment, new_master.data) != 0) {
+    YAMI_DIAGLOGS("Could not assemble MSG-RSTORACK");
+    goto kill_connection;
+  }
+
+  memcpy(t->payload, new_master.data, MEGAKI_AES_KEYBYTES);
+  ctx->x.ackr.token = t;
+  if (AES_set_encrypt_key((unsigned char*) new_master.data, MEGAKI_AES_KEYSIZE, &ctx->x.ackr.kenc) != 0) {
+    YAMI_DIAGLOGS("Could not set new master encrypt round key");
+    goto kill_connection;
+  }
+
+  if (AES_set_decrypt_key((unsigned char*) new_master.data, MEGAKI_AES_KEYSIZE, &ctx->x.ackr.kdec) != 0) {
+    YAMI_DIAGLOGS("Could not set new master decrypt round key");
+    goto kill_connection;
+  }
+
+
+  resp->data_size = MEGAKI_MSGSIZE(sizeof(mgk_msgrstorack_plain_t));
+  resp->tunneling_header_length = sizeof(mgk_msgpreamble_t);
+  resp->end_connection = 0;
+  ctx->state = MGS_TUNNEL_READY;
+
   return ;
 
 kill_connection:
   resp->end_connection = 1;
 }
 
+int assemble_rstorack(yami_ctx_t* ctx, byte* outbuf, mgk_token_t token, 
+    mgk_aes_key_t masterkey, mgk_aes_key_t client_augment, byte* out_newkey)
+{
+  YAMI_ASSERT(sizeof(mgk_msgrstorack_plain_t) == MEGAKI_AES_ENCSIZE(sizeof(mgk_msgrstorack_plain_t)),
+    "There shouldn't be any extra data. I don't know how to handle this");
+  mgk_msgrstorack_plain_t rstorack;
+    
+  if (!RAND_bytes(rstorack.server_key_augment.data, MEGAKI_AES_KEYBYTES)) {
+    YAMI_DIAGLOGS("Could not generate random server key augmentation");
+    goto failure;
+  }
+ 
+  mgk_aes_key_t intermediate_augmented;
+  mgk_derive_master(masterkey.data, client_augment.data, intermediate_augmented.data);
+
+  AES_KEY kenc;
+  if (AES_set_encrypt_key((unsigned char*) intermediate_augmented.data, MEGAKI_AES_KEYSIZE, &kenc) != 0) {
+    YAMI_DIAGLOGS("Could not initalize AES encryption key");
+    goto failure;
+  }
+ 
+  length_t retlen = MEGAKI_MSGSIZE(sizeof(mgk_msgrstorack_plain_t));
+  if (mgk_encode_message((byte*) &rstorack, sizeof(mgk_msgrstorack_plain_t), token,
+        intermediate_augmented, &kenc, outbuf, &retlen) != 0) {
+    YAMI_DIAGLOGS("Could not encode MSG-RSTORACK message");
+    goto failure;
+  }
+  ((mgk_msghdr_t*)outbuf)->preamble.header.type = magic_msg_rstorack;
+  mgk_derive_master(intermediate_augmented.data, rstorack.server_key_augment.data, out_newkey);
+
+  return( 0 );
+
+failure:
+  return( -1 );
+}
+
+ 
 int assemble_synack(yami_ctx_t* ctx, RSA* clrsa, mgk_synack_t* res, 
     mgk_aes_key_t ephkey, const byte* err)
 {

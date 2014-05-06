@@ -26,7 +26,8 @@ typedef struct szkr_ctx_t {
   mgk_token_t     token;
   mgk_aes_key_t   server_symmetric,
                   master_symmetric,
-                  ephemeral;
+                  ephemeral,
+                  client_augment;
   RSA             *client_rsa,
                   *server_rsa;
   AES_KEY         kenc, kdec;
@@ -57,9 +58,11 @@ typedef struct szkr_session_data_t {
 int        assemble_syn(szkr_ctx_t* ctx, mgk_syn_t* osyn);
 szkr_err_t handle_synack(szkr_ctx_t* ctx, mgk_synack_t* isynack);
 int        check_ackack(mgk_ackack_t* iackack);
+szkr_err_t handle_rstorack(szkr_ctx_t* ctx, szkr_session_data_t* data, byte* buf);
 int        assemble_ack(szkr_ctx_t* ctx, mgk_ack_t* oack);
 szkr_err_t decode_msg(szkr_ctx_t* ctx, const byte* imsg, length_t len, byte* obuf, length_t *olen);
 int        assemble_msg(szkr_ctx_t* ctx, const byte* inmsg, byte* outresp, length_t* resplen);
+int        assemble_rstor(szkr_ctx_t* ctx, szkr_session_data_t* data, byte* outbuf);
 int        read_packet(szkr_iostream_t* ios, byte* buffer, length_t packetlen);
 int        write_packet(szkr_iostream_t* ios, byte* buffer, length_t packetlen);
 int        rsa_keygen(szkr_ctx_t* ctx);
@@ -212,42 +215,79 @@ int szkr_get_session_data(szkr_ctx_t* ctx, byte* sdata, length_t* len)
 int szkr_resume_session(szkr_ctx_t* ctx, const byte* sdata)
 {
   szkr_err_t err = szkr_err_none;
+  /* if (ctx->state != state_inactive) { */
+  /*   err = szkr_err_invalid_state; */
+  /*   goto failure; */
+  /* } */
+
   szkr_session_data_t* data = (szkr_session_data_t*) sdata;
-
-  length_t encmsglen = MEGAKI_MSGSIZE(sizeof(mgk_msgrstor_plain_t));
-  byte msg[MEGAKI_MSGSIZE(sizeof(mgk_msgrstor_plain_t))];
-
-  mgk_msgrstor_plain_t rmsg;
-  if (!RAND_bytes((unsigned char*) rmsg.client_key_augment.data,
-        MEGAKI_AES_KEYBYTES)) {
+  byte msg[ MEGAKI_MSGSIZE(sizeof(mgk_msgrstor_plain_t)) ];
+  if (assemble_rstor(ctx, data, msg) != 0) {
     err = szkr_err_internal;
     goto failure;
   }
 
-  AES_KEY aes_enc;
-  if (AES_set_encrypt_key((unsigned char*) data->master_key.data,
-        MEGAKI_AES_KEYSIZE, &aes_enc) != 0) {
-    err = szkr_err_internal;
+  if (!write_packet(&ctx->ios, msg, MEGAKI_MSGSIZE(sizeof(mgk_msgrstor_plain_t)))) {
+    err = szkr_err_io;
     goto failure;
   }
+  
+  SAZUKARI_ASSERT(MEGAKI_MSGSIZE(sizeof(mgk_msgrstorack_plain_t)) >= sizeof(mgk_rehandshake_req_t),
+    "Not implemented as it does not make sense with Megaki as of now. Add support if needed.");
+  
+  byte ackmsg[ MEGAKI_MSGSIZE(sizeof(mgk_msgrstorack_plain_t)) ];
 
-  if (mgk_encode_message((byte*) &rmsg, sizeof(mgk_msgrstor_plain_t),
-        data->token, data->master_key, &aes_enc, msg, &encmsglen) != 0) {
-    err = szkr_err_internal;
-    goto failure;
-  }
-  ((mgk_msghdr_t*)msg)->preamble.header.type = magic_msg_rstor;
-
-  if (!write_packet(&ctx->ios, msg, encmsglen)) {
+  /* read the header first, to decide our type of data */
+  if (!read_packet(&ctx->ios, ackmsg, sizeof(mgk_header_t))) {
     err = szkr_err_io;
     goto failure;
   }
 
+  mgk_magic_type incomingtype = ((mgk_header_t*) ackmsg)->type;
+  if (!mgk_check_magic((mgk_header_t*) ackmsg)) {
+    err = szkr_err_protocol;
+    goto failure;
+  }
+
+  if (incomingtype == magic_req_rehs) {
+    err = szkr_err_handshake_needed;
+    goto failure;
+  } else if (incomingtype != magic_msg_rstorack) {
+    err = szkr_err_protocol;
+    goto failure;
+  }
+
+  /* read the rest of the packet ... */
+  if (!read_packet(&ctx->ios, ackmsg + sizeof(mgk_header_t), 
+        MEGAKI_MSGSIZE(sizeof(mgk_msgrstorack_plain_t)) - sizeof(mgk_header_t))) {
+    err = szkr_err_io;
+    goto failure;
+  }
+
+  szkr_err_t ret;
+  if ((ret = handle_rstorack(ctx, data, ackmsg)) != szkr_err_none) {
+    err = ret;
+    goto failure;
+  }
+
+  if (AES_set_encrypt_key(ctx->master_symmetric.data, MEGAKI_AES_KEYSIZE,
+                          &ctx->kenc) != 0) {
+    err = szkr_err_internal;
+    goto failure;
+  }
+  
+  if (AES_set_decrypt_key(ctx->master_symmetric.data, MEGAKI_AES_KEYSIZE,
+                          &ctx->kdec) != 0) {
+    err = szkr_err_internal;
+    goto failure;
+  }
   /* byte response[ */
   ctx->last_err = szkr_err_none;
+  ctx->state = state_ready;
   return( 0 );
 
 failure:
+  ctx->state = state_error;
   ctx->last_err = err;
   return( -1 );
 }
@@ -329,6 +369,12 @@ int write_packet(szkr_iostream_t* ios, byte* buffer, length_t packetlen)
 {
   return (ios->write_callback(buffer, packetlen, ios->cb_param) == packetlen);
 }  
+
+int check_ackack(mgk_ackack_t* iackack)
+{
+  return( mgk_check_magic(&iackack->header) && 
+          iackack->header.type == magic_ackack);
+}
 
 int rsa_keygen(szkr_ctx_t* ctx)
 {
@@ -431,6 +477,45 @@ failure:
   return( -1 );
 }
 
+szkr_err_t handle_rstorack(szkr_ctx_t* ctx, szkr_session_data_t* data, byte* buf)
+{
+  szkr_err_t res = szkr_err_unknown;
+  mgk_msghdr_t* hdr = (mgk_msghdr_t*) buf;
+  if (hdr->preamble.header.type != magic_msg_rstorack) {
+    res = szkr_err_protocol;
+    goto failure;
+  }
+
+  if (ntohl(hdr->preamble.length) != sizeof(mgk_msgrstorack_plain_t)) {
+    res = szkr_err_protocol;
+    goto failure;
+  }
+
+  byte augmentedkey[ MEGAKI_AES_KEYBYTES ];
+  mgk_derive_master(data->master_key.data, ctx->client_augment.data, augmentedkey);
+
+  AES_KEY kdec;
+  if (AES_set_decrypt_key((unsigned char*) augmentedkey, MEGAKI_AES_KEYSIZE, &kdec) != 0) {
+    res = szkr_err_internal;
+    goto failure;
+  }
+
+  int ret;
+  mgk_msgrstorack_plain_t rstorack_plain;
+  length_t len = sizeof(rstorack_plain);
+  if ((ret = mgk_decode_message(buf, MEGAKI_MSGSIZE(sizeof(mgk_msgrstorack_plain_t)), data->token,
+        *(mgk_aes_key_t*) augmentedkey, &kdec, (byte*) &rstorack_plain, &len)) != 0) {
+    res = (ret == -1 ? szkr_err_protocol : szkr_err_internal);
+    goto failure;
+  }
+  mgk_derive_master(augmentedkey, rstorack_plain.server_key_augment.data, ctx->master_symmetric.data);
+
+  return( szkr_err_none );
+failure:
+  return( res );
+}
+
+    
 szkr_err_t handle_synack(szkr_ctx_t* ctx, mgk_synack_t* isynack)
 {
   mgk_synack_plain_t plain;
@@ -496,10 +581,33 @@ blind_off:
   return( res );
 }
 
-int check_ackack(mgk_ackack_t* iackack)
+int assemble_rstor(szkr_ctx_t* ctx, szkr_session_data_t* data, byte* outbuf)
 {
-  return( mgk_check_magic(&iackack->header) && 
-          iackack->header.type == magic_ackack);
+  length_t encmsglen = MEGAKI_MSGSIZE(sizeof(mgk_msgrstor_plain_t));
+
+  mgk_msgrstor_plain_t rmsg;
+  if (!RAND_bytes((unsigned char*) rmsg.client_key_augment.data,
+        MEGAKI_AES_KEYBYTES)) {
+    goto failure;
+  }
+
+  AES_KEY aes_enc;
+  if (AES_set_encrypt_key((unsigned char*) data->master_key.data,
+        MEGAKI_AES_KEYSIZE, &aes_enc) != 0) {
+    goto failure;
+  }
+
+  if (mgk_encode_message((byte*) &rmsg, sizeof(mgk_msgrstor_plain_t),
+        data->token, data->master_key, &aes_enc, outbuf, &encmsglen) != 0) {
+    goto failure;
+  }
+  ((mgk_msghdr_t*) outbuf)->preamble.header.type = magic_msg_rstor;
+  memcpy(ctx->client_augment.data, rmsg.client_key_augment.data, MEGAKI_AES_KEYBYTES);
+  return( 0 );
+
+failure:
+  return( -1 );
+
 }
 
 int assemble_ack(szkr_ctx_t* ctx, mgk_ack_t* oack)

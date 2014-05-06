@@ -80,6 +80,8 @@ int main(int argc, char** argv)
     }
 
     szkr_resume_session(ctx, sdata);
+    memcpy(stuff, "CHAO!", 5);
+    szkr_send_message(ctx, stuff, 64, NULL, NULL);
     while(1){sleep(10);}
   }
 

@@ -184,6 +184,8 @@ int mgk_check_magic(const mgk_header_t* hdr);
 void mgk_fill_magic(mgk_header_t* hdr);
 void mgk_derive_master(const byte* srvsymm, const byte* clsymm,
     byte* mastersymm);
+/* (msg[msglen - 1], msg[MEGAKI_AES_ENCSIZE(msglen)]) should contain 
+ * pseudo-random bytes!!! */
 int mgk_encode_message(byte* msg, length_t msglen, 
     mgk_token_t token, const mgk_aes_key_t key, AES_KEY *schdkey,
     byte* res, length_t *reslen);
