@@ -752,10 +752,24 @@ void handle_msg(yami_ctx_t* ctx, yami_resp_t* resp, byte* buf, length_t len)
     goto dealloc_buffer;
   }
   
-  fprintf(stderr, "Response: ");
-  fwrite(respb, respsz, 1, stderr);
-  fprintf(stderr, "\n");
-  fflush(stderr);
+  byte* respmsgbuf = malloc(MEGAKI_MSGSIZE(respsz));
+  if (!respmsgbuf) {
+    YAMI_DIAGLOGS("Could not allocate memory for response message buffer");
+    goto dealloc_respbuffer;
+  }
+  
+  length_t res_encsize = MEGAKI_MSGSIZE(respsz);
+  RAND_pseudo_bytes(respb + respsz, MEGAKI_AES_ENCSIZE(respsz) - respsz);
+  if (mgk_encode_message(respb, respsz, tok, masterkey, &ctx->x.ackr.kenc, 
+        respmsgbuf, &res_encsize) != 0) {
+    YAMI_DIAGLOGS("Failed to assemble a response");
+    goto dealloc_respmsgbuffer;
+  }
+
+  resp->uses_new_buffer = 1;
+  resp->new_buffer = respmsgbuf;
+  /* respmsgbuf[offsetof(mgk_msghdr_t,iv)+3]='X'; */
+  resp->data_size = res_encsize;
 
   free(respb);
   free(msgdec);
@@ -764,7 +778,13 @@ void handle_msg(yami_ctx_t* ctx, yami_resp_t* resp, byte* buf, length_t len)
   ctx->has_pegasus_ctx = 0;
 
   return ;
+
+dealloc_respmsgbuffer:
+  free(respmsgbuf);
   
+dealloc_respbuffer:
+  free(respb);
+
 dealloc_buffer:
   free(msgdec);
 

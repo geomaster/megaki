@@ -78,7 +78,7 @@ int broker(void* param)
     if (rsphdr.type == PEGASUS_RESP_HANDLE_OK) {
 
       pegasus_handle_resp_t hresp;
-      char response[] = "Broker says: hello!";
+      char response[] = "Broker says: hello!AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
       hresp.respsize = sizeof(response) - 1;
       write(STDOUT_FILENO, &hresp, sizeof(hresp));
       write(STDOUT_FILENO, response, sizeof(response) - 1);
@@ -111,6 +111,7 @@ int main(int argc, char** argv)
     .log_level = LOG_DEBUG2,
     .log_file = stderr,
     .lock_timeout = 10,
+    .buffer_sentinel = 17,
     .message_timeout = { .tv_sec = 1, .tv_usec = 0 }
   };
   if (pegasus_init(&pconf) != 0) {

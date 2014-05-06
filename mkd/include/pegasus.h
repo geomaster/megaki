@@ -40,6 +40,8 @@ typedef struct pegasus_conf_t {
   /*** Maximum time to wait on minion responses ***/
   struct timeval          message_timeout;
 
+  /*** Free space to add at the end of each allocated buffer ***/
+  length_t                buffer_sentinel;
   /** End configuration options for MKD Pegasus **/
 } pegasus_conf_t;
 

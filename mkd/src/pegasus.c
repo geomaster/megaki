@@ -283,7 +283,7 @@ int pegasus_handle_message(pegasus_ctx_t* ctx, const byte* buf, length_t
   *resplen = hresp.respsize;
 
 
-  byte* respbuf = malloc(hresp.respsize);
+  byte* respbuf = malloc(hresp.respsize + pegasus__config.buffer_sentinel);
   if (!respbuf) {
     PEGASUS_LOGS(LOG_ERROR, "Memory allocation failed, unstable state of minion, further calls will fail!");
     goto set_unstable;
@@ -484,7 +484,7 @@ int minion_init(pegasus_minion_t* min, byte* mindata, pegasus_guid_t* opguid)
   PEGASUS_NONFAIL(pthread_mutex_unlock(&pegasus__guidmut) == 0);
 
   if (!write_packet(min->fds[1], (byte*) &hdr, sizeof(pegasus_req_hdr_t)) ||
-      !write_packet(min->fds[1], (byte*) &req, sizeof(pegasus_start_req_t)) <
+      !write_packet(min->fds[1], (byte*) &req, sizeof(pegasus_start_req_t)) || 
       !write_packet(min->fds[1], mindata, pegasus__config.context_data_length)) {
     PEGASUS_LOGF(LOG_WARNING, "Could not write start request to minion %ld, "
         "unstable state!", (long) min->pid);

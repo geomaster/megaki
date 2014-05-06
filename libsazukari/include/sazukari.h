@@ -2,6 +2,7 @@
 #define __SAZUKARI_H__
 #include "common.h"
 #define SAZUKARI_MESSAGE_HARD_LIMIT     1048576
+#define SAZUKARI_RESPONSE_HARD_LIMIT    1048576
 #define SAZUKARI_MIN_BUFFER_SENTINEL    128
 
 /** Sazukari public declarations **/
@@ -24,7 +25,8 @@ typedef enum szkr_err_t {
   szkr_err_io,
   szkr_err_handshake_needed,
   szkr_err_server_blacklisted,
-  szkr_err_message_too_long
+  szkr_err_message_too_long,
+  szkr_err_response_too_long
 } szkr_err_t;
 
 typedef slength_t (* szkr_write_cb)(byte*, length_t, void*);
@@ -49,7 +51,7 @@ int        szkr_do_handshake(szkr_ctx_t* ctx);
 int        szkr_resume_session(szkr_ctx_t* ctx, const byte* sdata);
 szkr_err_t szkr_last_error(szkr_ctx_t* ctx);
 int        szkr_send_message(szkr_ctx_t*, byte* msg, length_t msglen, 
-                             byte* responsebuf, length_t* responselen);
+                             byte** responsebuf, length_t* responselen);
 int        szkr_get_session_data(szkr_ctx_t* ctx, byte* sdata, 
                                  length_t* len);
 length_t   szkr_get_session_data_size();

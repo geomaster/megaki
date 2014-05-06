@@ -64,10 +64,17 @@ int main(int argc, char** argv)
 
   length_t len = 1024;
   byte sdata[1024];
+
+  byte *resp;
   if (szkr_do_handshake(ctx) == 0) {
     printf("success!\n");
     char msg[] = "hello world!", dummy[ 100 ];
-    szkr_send_message(ctx, stuff, 64, NULL, NULL);
+    szkr_send_message(ctx, stuff, 64, &resp, &len);
+    printf("here's what i have: ");
+    fwrite(resp, len, 1, stdout);
+    printf("\n");
+
+    len = 1024;
     szkr_get_session_data(ctx, sdata, &len);
 
     sleep(2);
@@ -81,7 +88,11 @@ int main(int argc, char** argv)
 
     szkr_resume_session(ctx, sdata);
     memcpy(stuff, "CHAO!", 5);
-    szkr_send_message(ctx, stuff, 64, NULL, NULL);
+    szkr_send_message(ctx, stuff, 64, &resp, &len);
+    printf("here's what i have: ");
+    fwrite(resp, len, 1, stdout);
+    printf("\n");
+
     while(1){sleep(10);}
   }
 

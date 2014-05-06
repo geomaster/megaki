@@ -293,7 +293,7 @@ failure:
 }
 
 int szkr_send_message(szkr_ctx_t* ctx, byte* msg, length_t msglen,
-                     byte* responsebuf, length_t* responselen)
+                     byte** responsebuf, length_t* responselen)
 {
   szkr_err_t err;
 
@@ -323,9 +323,55 @@ int szkr_send_message(szkr_ctx_t* ctx, byte* msg, length_t msglen,
     goto dealloc_buffer;
   }
 
+  mgk_msghdr_t hdr;
+  if (!read_packet(&ctx->ios, (byte*) &hdr, sizeof(mgk_msghdr_t))) {
+    err = szkr_err_io;
+    goto dealloc_buffer;
+  }
+
+  if (!mgk_check_magic(&hdr.preamble.header)) {
+    err = szkr_err_protocol;
+    goto dealloc_buffer;
+  }
+
+  length_t inlen = ntohl(hdr.preamble.length);
+  if (inlen > SAZUKARI_RESPONSE_HARD_LIMIT) {
+    err = szkr_err_response_too_long;
+    goto dealloc_buffer;
+  }
+
+  byte* respbuf = malloc(MEGAKI_AES_ENCSIZE(inlen) + 32 + MEGAKI_MSGSIZE(inlen));
+  if (!respbuf) {
+    err = szkr_err_internal;
+    goto dealloc_buffer;
+  }
+
+  byte *resp_plainbuf = respbuf,
+       *resp_fullbuf = respbuf + 32 + MEGAKI_AES_ENCSIZE(inlen);
+  if (!read_packet(&ctx->ios, resp_fullbuf + sizeof(mgk_msghdr_t), MEGAKI_MSGSIZE(inlen) -
+        sizeof(mgk_msghdr_t))) {
+    err = szkr_err_io;
+    goto dealloc_respbuffer;
+  }
+
+  memcpy(resp_fullbuf, &hdr, sizeof(mgk_msghdr_t));
+
+  length_t outlen = MEGAKI_AES_ENCSIZE(inlen);
+  int ret;
+  if ((ret = mgk_decode_message(resp_fullbuf, MEGAKI_MSGSIZE(inlen), ctx->token, ctx->master_symmetric,
+          &ctx->kdec, resp_plainbuf, &outlen)) != 0) {
+    err = (ret == -1 ? szkr_err_protocol : szkr_err_internal);
+    goto dealloc_respbuffer;
+  }
+
+  *responsebuf = resp_plainbuf; 
+  *responselen = inlen;
   ctx->last_err = szkr_err_none;
   free(outbuf);
   return( 0 );
+
+dealloc_respbuffer:
+  free(respbuf);
 
 dealloc_buffer:
   free(outbuf);

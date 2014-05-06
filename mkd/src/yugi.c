@@ -871,10 +871,10 @@ void job_handle_message(void* data)
       c->tunnelheadlen = resp.tunneling_header_length;
     }
   }
- 
+
 /* dealloc_yamibuf: */
-  if (resp.uses_new_buffer)
-    free(resp.new_buffer);
+  /* if (resp.uses_new_buffer) */
+  /*   free(resp.new_buffer); */
 
 /* quit: */
   release_connection(c);
