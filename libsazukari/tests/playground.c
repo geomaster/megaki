@@ -102,9 +102,9 @@ int main(int argc, char** argv)
     printf("msg: ");
     report_time(td);
 
-    /* printf("here's what i have: "); */
-    /* fwrite(resp, len, 1, stdout); */
-    /* printf("\n"); */
+    printf("response: [");
+    fwrite(resp, len, 1, stdout);
+    printf("]\n");
 
     len = 1024;
     szkr_get_session_data(ctx, sdata, &len);
@@ -130,6 +130,9 @@ int main(int argc, char** argv)
     /* printf("here's what i have: "); */
     /* fwrite(resp, len, 1, stdout); */
     /* printf("\n"); */
+    printf("response: [");
+    fwrite(resp, len, 1, stdout);
+    printf("]\n");
 
     {sleep(10);}
   }

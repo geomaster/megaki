@@ -478,6 +478,9 @@ void on_client_connect(uv_stream_t* server, int status)
   conn->sndlen = 0; 
   conn->expectlen = yc->yami_iniths_len;
   
+  /* int len2 = sizeof(struct sokaddr_in); */
+  /* uv_tcp_getsockname(client, (struct sockaddr*) &conn->addr, &len2); */
+
 #ifdef YUGI_DEBUG
   dbg_generate_connection_id(conn->dbg_id);
 #endif

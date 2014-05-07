@@ -6,6 +6,7 @@ OBJECTNAMES = \
               yugi.o \
               yami.o \
               pegasus.o \
+              arcangelo.o \
               main.o \
               threadpool.o \
               common.o \
@@ -16,6 +17,7 @@ HEADERNAMES = \
               yugi.h \
               yami.h \
               pegasus.h \
+              arcangelo.h \
               threadpool.h \
               common.h \
               tokenbank.h \

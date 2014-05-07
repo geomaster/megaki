@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include "arcangelo.h"
 #include "yugi.h"
 #include "yami.h"
 #include <unistd.h>
@@ -22,10 +23,7 @@ int writecb(byte* buf, length_t len, void* pam)
 
 int broker(void* param)
 {
-  signal(SIGINT, SIG_IGN);
-  signal(SIGPIPE, SIG_IGN);
-  
-  byte* ppp = NULL;
+    byte* ppp = NULL;
 
   fprintf(stderr, "Broker starts\n");
   fflush(stderr);
@@ -103,9 +101,13 @@ int main(int argc, char** argv)
   fclose(f);
   signal(SIGPIPE, SIG_IGN);
   
+  arcangelo_config_t arconf = {
+    .shell = "/bin/sh",
+    .command = "/usr/bin/php -f \"src/arcangelo.php\""
+  };
   pegasus_conf_t pconf = {
-    .start_broker_cb = &broker,
-    .start_broker_cb_param = NULL,
+    .start_broker_cb = &arcangelo_start_broker,
+    .start_broker_cb_param = &arconf,
     .context_data_length = sizeof(pegasus_yami_payload_t),
     .minion_pool_size = 4,
     .log_level = LOG_DEBUG2,

@@ -250,7 +250,6 @@ int pegasus_handle_message(pegasus_ctx_t* ctx, const byte* buf, length_t
   pegasus_handle_req_t hreq;
   memcpy(hreq.guid.data, ctx->guid.data, sizeof(pegasus_guid_t));
   hreq.msgsize = msglen;
-  hreq.maxrespsize = *resplen;
   
   if (!write_packet(min->fds[1], (byte*) &reqhdr, sizeof(pegasus_req_hdr_t)) ||
       !write_packet(min->fds[1], (byte*) &hreq, sizeof(pegasus_handle_req_t)) ||
@@ -414,6 +413,9 @@ rollback_preforks:
 
 void broker_surrogate(pid_t mypid, int me2master[2], int master2me[2])
 {
+  signal(SIGINT, SIG_IGN);
+  signal(SIGPIPE, SIG_IGN);
+
   close(me2master[0]); /* we don't want to read from our write pipe */
   close(master2me[1]); /* ...nor write to our read pipe */
 

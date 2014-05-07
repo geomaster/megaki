@@ -9,24 +9,28 @@
 #define PEGASUS_GUID_BYTES              8
 #define pk __attribute__((__packed__))
 
+enum pegasus_reqtype {
+  PEGASUS_REQ_START = 0x01,
+  PEGASUS_REQ_QUIT = 0x02,
+  PEGASUS_REQ_HANDLE = 0x03
+};
+
+enum pegasus_resptype {
+  PEGASUS_RESP_START_OK = 0x01,
+  PEGASUS_RESP_START_FAIL = 0x02,
+  PEGASUS_RESP_QUIT_OK = 0x03,
+  PEGASUS_RESP_HANDLE_OK = 0x04,
+  PEGASUS_RESP_HANDLE_FAIL = 0x05
+};
+
 /* Request header: sent first, contains the type of the request */
 typedef struct pk pegasus_req_hdr_t {
-  enum pegasus_reqtype {
-    PEGASUS_REQ_START,
-    PEGASUS_REQ_QUIT,
-    PEGASUS_REQ_HANDLE
-  } type;
+  byte type;
 } pegasus_req_hdr_t;
 
 /* Response header: sent first, contains the type of the response */
 typedef struct pk pegasus_resp_hdr_t {
-  enum pegasus_resptype {
-    PEGASUS_RESP_START_OK,
-    PEGASUS_RESP_START_FAIL,
-    PEGASUS_RESP_QUIT_OK,
-    PEGASUS_RESP_HANDLE_OK,
-    PEGASUS_RESP_HANDLE_FAIL
-  } type;
+  byte type;  
 } pegasus_resp_hdr_t;
 
 /* Pegasus GUID structure, contains an 8-byte GUID */
@@ -68,8 +72,7 @@ typedef struct pegasus_quit_resp_t {
  * message data follows */
 typedef struct pk pegasus_handle_req_t {
   pegasus_guid_t guid;
-  length_t       msgsize,
-                 maxrespsize;
+  length_t       msgsize;
   /* follows: message of msgsize bytes */
 } pegasus_handle_req_t;
 

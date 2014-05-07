@@ -257,9 +257,10 @@ yami_resp_t yami_incoming(yami_ctx_t* ctx, byte* buffer, length_t length)
       break;
       
     case magic_msg_rstor:
-      if (ctx->state == MGS_WAITING_SYN)
+      if (ctx->state == MGS_WAITING_SYN) {
         handle_rstor(ctx, &resp, buffer);
-      else {
+        memcpy(ctx->pgspl.token, ctx->x.ackr.token->token, MEGAKI_TOKEN_BYTES);
+      } else {
         YAMI_DIAGLOGS("Unexpected MSG-RSTOR packet");
         goto kill_connection;
       }
