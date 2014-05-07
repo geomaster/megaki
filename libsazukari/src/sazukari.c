@@ -90,6 +90,7 @@ int szkr_new_ctx(szkr_ctx_t* ctx, szkr_iostream_t ios, szkr_srvkey_t srvkey)
   ctx->last_err = szkr_err_none;
   ctx->state = state_inactive;
   ctx->srvkey = srvkey;
+  rsa_keygen(ctx);
   
   return(1);
 }
@@ -243,7 +244,7 @@ int szkr_resume_session(szkr_ctx_t* ctx, const byte* sdata)
     goto failure;
   }
 
-  mgk_magic_type incomingtype = ((mgk_header_t*) ackmsg)->type;
+  mgk_magic_type incomingtype = ackmsg[offsetof(mgk_header_t, type)]; 
   if (!mgk_check_magic((mgk_header_t*) ackmsg)) {
     err = szkr_err_protocol;
     goto failure;
@@ -537,11 +538,11 @@ szkr_err_t handle_rstorack(szkr_ctx_t* ctx, szkr_session_data_t* data, byte* buf
     goto failure;
   }
 
-  byte augmentedkey[ MEGAKI_AES_KEYBYTES ];
-  mgk_derive_master(data->master_key.data, ctx->client_augment.data, augmentedkey);
+  mgk_aes_key_t augmentedkey;
+  mgk_derive_master(data->master_key.data, ctx->client_augment.data, augmentedkey.data);
 
   AES_KEY kdec;
-  if (AES_set_decrypt_key((unsigned char*) augmentedkey, MEGAKI_AES_KEYSIZE, &kdec) != 0) {
+  if (AES_set_decrypt_key((unsigned char*) augmentedkey.data, MEGAKI_AES_KEYSIZE, &kdec) != 0) {
     res = szkr_err_internal;
     goto failure;
   }
@@ -550,11 +551,11 @@ szkr_err_t handle_rstorack(szkr_ctx_t* ctx, szkr_session_data_t* data, byte* buf
   mgk_msgrstorack_plain_t rstorack_plain;
   length_t len = sizeof(rstorack_plain);
   if ((ret = mgk_decode_message(buf, MEGAKI_MSGSIZE(sizeof(mgk_msgrstorack_plain_t)), data->token,
-        *(mgk_aes_key_t*) augmentedkey, &kdec, (byte*) &rstorack_plain, &len)) != 0) {
+        augmentedkey, &kdec, (byte*) &rstorack_plain, &len)) != 0) {
     res = (ret == -1 ? szkr_err_protocol : szkr_err_internal);
     goto failure;
   }
-  mgk_derive_master(augmentedkey, rstorack_plain.server_key_augment.data, ctx->master_symmetric.data);
+  mgk_derive_master(augmentedkey.data, rstorack_plain.server_key_augment.data, ctx->master_symmetric.data);
 
   return( szkr_err_none );
 failure:
