@@ -897,7 +897,8 @@ int close_connection(conn_t* c)
     return(0); /* already done */
   else {
     c->is_closed = 1;
-    uv_close((uv_handle_t*) c->stream, &on_close_connection);
+    if (!uv_is_closing(c->stream))
+      uv_close((uv_handle_t*) c->stream, &on_close_connection);
   } 
   return(res);
 }
