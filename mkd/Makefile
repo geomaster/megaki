@@ -1,5 +1,6 @@
 CC=gcc
 CFLAGS=-fdump-rtl-expand -O2 -DDEBUG -DYAMI_DIAGNOSTIC -Iinclude -Wall -g
+LDFLAGS=
 LIBS=-L/usr/local/lib -pthread -lcrypto -luv
 
 OBJECTNAMES = \
@@ -53,7 +54,7 @@ docs/mkd-callgraph.gv: $(OBJ)
 	egypt obj/*.expand > docs/mkd-callgraph.gv
 	
 bin/mkd: $(OBJ)         
-	$(CC) -o $@ $^ $(CFLAGS) $(LIBS)
+	$(CC) $(LDFLAGS) -o $@ $^ $(CFLAGS) $(LIBS)
 	
 obj/%.o: src/%.c $(HEADERS)
 	$(CC) -c -o $@ $< $(CFLAGS)
