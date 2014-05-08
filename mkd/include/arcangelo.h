@@ -1,5 +1,6 @@
 #ifndef __ARCANGELO_H__
 #define __ARCANGELO_H__
+#include <stdio.h>
 
 typedef struct arcangelo_config_t {
   /*** Configuration options for Arcangelo ***/
@@ -9,6 +10,9 @@ typedef struct arcangelo_config_t {
 
   /*** Command to run in the shell ***/
   char*           command;
+
+  /*** File to bind standard error output to ***/
+  FILE*           stderr_bind;
 } arcangelo_config_t;
 
 int arcangelo_start_broker(void* param);

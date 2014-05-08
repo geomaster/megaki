@@ -1,4 +1,5 @@
 #include "arcangelo.h"
+#include <stdio.h>
 #include <unistd.h>
 
 int arcangelo_start_broker(void* param)
@@ -12,6 +13,9 @@ int arcangelo_start_broker(void* param)
     config->command, /* command to run */
     NULL /* terminator */
   };
+
+  if (dup2(fileno(config->stderr_bind), STDERR_FILENO) == -1)
+    return( -1 );
 
   execv(config->shell, argv);
   return( -1 );

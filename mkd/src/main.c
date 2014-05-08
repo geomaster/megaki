@@ -103,7 +103,10 @@ int main(int argc, char** argv)
   
   arcangelo_config_t arconf = {
     .shell = "/bin/sh",
-    .command = "/usr/bin/php -f \"src/arcangelo.php\""
+    .command = "cd ../public_php && "
+      "/usr/bin/php -f \"../mkd/src/arcangelo.php\" "
+      "\"arcangelo_userspace.php\"",
+    .stderr_bind = stderr
   };
   pegasus_conf_t pconf = {
     .start_broker_cb = &arcangelo_start_broker,
@@ -114,7 +117,7 @@ int main(int argc, char** argv)
     .log_file = stderr,
     .lock_timeout = 10,
     .buffer_sentinel = 17,
-    .message_timeout = { .tv_sec = 1, .tv_usec = 0 }
+    .message_timeout = { .tv_sec = 10, .tv_usec = 0 }
   };
   if (pegasus_init(&pconf) != 0) {
     fprintf(stderr, "Pegasus did not start up\n");
