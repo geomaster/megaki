@@ -1,7 +1,7 @@
 <?php
 
 function on_init() {
-  require('handle.php');
+  require('maskom/handle.php');
 }
 
 function on_start() {

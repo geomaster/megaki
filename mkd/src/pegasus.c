@@ -70,7 +70,7 @@ uint64_t           pegasus__guid;
 /** Start internal functions **/
 int prefork_minions(int count);
 int minion_init(pegasus_minion_t* min, byte* mindata, pegasus_guid_t* opguid);
-void broker_surrogate(pid_t mypid, int me2master[2], int master2me[2]);
+int broker_surrogate(pid_t mypid, int me2master[2], int master2me[2]);
 void minion_destroy(pegasus_minion_t* min, pegasus_guid_t guid);
 int read_packet(int fd, byte* buffer, length_t packetlen);
 int write_packet(int fd, const byte* buffer, length_t packetlen);
@@ -352,7 +352,9 @@ int prefork_minion(pegasus_minion_t* min)
 
     return( -2 );
   } else if (pid == 0) {
-    broker_surrogate(pid, minionwrite /* me2master */, minionread /* master2me */);
+    if (broker_surrogate(pid, minionwrite /* me2master */, minionread /* master2me */) != 0) {
+      return( -1 );
+    }
   } else {
     min->pid = pid;
     min->fds[0] = minionwrite[0]; /* record read end of minion-write */
@@ -411,7 +413,7 @@ rollback_preforks:
   return( -1 );
 }
 
-void broker_surrogate(pid_t mypid, int me2master[2], int master2me[2])
+int broker_surrogate(pid_t mypid, int me2master[2], int master2me[2])
 {
   signal(SIGINT, SIG_IGN);
   signal(SIGPIPE, SIG_IGN);
@@ -429,12 +431,12 @@ void broker_surrogate(pid_t mypid, int me2master[2], int master2me[2])
   }
   
   if (write(me2master[1], &err, sizeof(int)) != sizeof(int))
-    return;
+    return( -1 );
 
   if (err == 0) { /* everything OK */
     /* get the broker rolling */
-    pegasus__config.start_broker_cb(pegasus__config.start_broker_cb_param);
-  }
+    return( pegasus__config.start_broker_cb(pegasus__config.start_broker_cb_param) );
+  } else return( -1 );
 }
 
 void minion_destroy(pegasus_minion_t* min, pegasus_guid_t guid)
