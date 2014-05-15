@@ -27,10 +27,12 @@ HEADERNAMES = \
               pmdk.h
 
 COMMONHEADERS = \
+              sslc.h \
               common.h \
               megaki.h
               
 COMMONSRC = \
+              sslc.c \
               common.c
           
 COMMONHEADERSPREF = $(addprefix ../common/include/,$(COMMONHEADERS))
