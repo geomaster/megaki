@@ -68,4 +68,4 @@ clean:
 	rm -f obj/*.o bin/libsazukari.so
 	cd include && rm -f $(COMMONHEADERS)
 	cd src && rm -f $(COMMONSRC)
-
+	cd android && make clean

@@ -1,5 +1,7 @@
-libsazukari/include/%: ../include/%
-	cp ../include/* libsazukari/include/
-	
-libsazukari/src/%: ../src/%
-	cp ../src/* libsazukari/src/
+default: 
+	cp -R ../../include ../../src libsazukari/
+
+clean:
+	rm -rf libsazukari/*
+
+.PHONY: clean default
