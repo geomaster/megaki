@@ -1,5 +1,5 @@
 CC=gcc
-CFLAGS=-fdump-rtl-expand -DDEBUG -Iinclude -shared -fPIC -Wall -g
+CFLAGS=-fdiagnostics-color=always -fdump-rtl-expand -DDEBUG -Iinclude -shared -fPIC -Wall -g
 TESTCFLAGS=-DTEST -DDEBUG -Iinclude -Lbin -Wall -g
 LIBS=-lcrypto 
 TESTLIBS=-lcrypto -lsazukari

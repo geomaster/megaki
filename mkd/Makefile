@@ -1,5 +1,5 @@
 CC=gcc
-CFLAGS=-fdump-rtl-expand -O2 -DDEBUG -DYAMI_DIAGNOSTIC -Iinclude -Wall -g
+CFLAGS=-fdiagnostics-color=always -fdump-rtl-expand -O2 -DDEBUG -DYAMI_DIAGNOSTIC -Iinclude -Wall -g
 LDFLAGS=
 LIBS=-L/usr/local/lib -pthread -lcrypto -luv
 
