@@ -18,9 +18,11 @@ HEADERNAMES = \
              
 COMMONHEADERS = \
               common.h \
+              sslc.h \
               megaki.h
               
 COMMONSRC = \
+              sslc.c \
               common.c
           
 COMMONHEADERSPREF = $(addprefix ../common/include/,$(COMMONHEADERS))

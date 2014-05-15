@@ -1,4 +1,5 @@
 #include "sazukari.h"
+#include "sslc.h"
 #include "megaki.h"
 #include <string.h>
 #include <arpa/inet.h>
@@ -78,8 +79,9 @@ int szkr_init()
 {
   ERR_load_crypto_strings();
   OpenSSL_add_all_ciphers();
+  ssl_thread_setup();
   
-  return(1);
+  return(0);
 }
 
 int szkr_new_ctx(szkr_ctx_t* ctx, szkr_iostream_t ios, szkr_srvkey_t srvkey)
@@ -90,9 +92,8 @@ int szkr_new_ctx(szkr_ctx_t* ctx, szkr_iostream_t ios, szkr_srvkey_t srvkey)
   ctx->last_err = szkr_err_none;
   ctx->state = state_inactive;
   ctx->srvkey = srvkey;
-  rsa_keygen(ctx);
-  
-  return(1);
+
+  return(0);
 }
 
 int szkr_reset_ctx(szkr_ctx_t* ctx)
