@@ -33,7 +33,7 @@ TESTEXECS=$(patsubst %.o,tests/%,$(TESTOBJNAMES))
 OBJ=$(patsubst %,obj/%,$(OBJECTNAMES))
 HEADERS=$(patsubst %,include/%,$(HEADERNAMES))
 
-default: sazukari tests callgraph
+default: sazukari tests android callgraph
 
 $(addprefix include/,$(COMMONHEADERS)): $(COMMONHEADERSPREF)
 	cp $(COMMONHEADERSPREF) include/
@@ -43,6 +43,9 @@ $(addprefix src/,$(COMMONSRC)): $(COMMONSRCPREF)
 	
 sazukari: bin/libsazukari.so
 
+android:
+	cd android && make
+	
 callgraph: docs/sazukari-callgraph.gv
 
 docs/sazukari-callgraph.gv: $(OBJ)
@@ -59,7 +62,7 @@ tests/%: tests/%.c bin/libsazukari.so
 obj/%.o: src/%.c $(HEADERS)
 	$(CC) -c -o $@ $< $(CFLAGS)
 	
-.PHONY: clean
+.PHONY: clean android sazukari tests callgraph
 
 clean:
 	rm -f obj/*.o bin/libsazukari.so
