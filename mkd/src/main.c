@@ -140,7 +140,7 @@ int main(int argc, char** argv)
   sigaction(SIGINT, &siginth, NULL);
 
   yugi_conf_t conf = {
-    .listen_address = "127.0.0.1",
+    .listen_address = "192.168.1.36",
     .listen_port = 6363,
     .thread_count = 2,
     .queue_size = 2000,

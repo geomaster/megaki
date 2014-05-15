@@ -906,7 +906,7 @@ int close_connection(conn_t* c)
 void on_close_connection(uv_handle_t* h)
 {
   conn_t* c = (conn_t*) h->data;
-  c->is_closed = 1;
+  c->is_closed = 1; // Android ssh was here yo
   free(h);
   release_connection(c);
 }

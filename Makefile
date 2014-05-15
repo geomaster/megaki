@@ -4,10 +4,10 @@ default: all
 
 all: mkd libsazukari
 
-mkd: $(COMMON_FILES) mkd/src/*.c
+mkd:
 	cd mkd && make
 
-libsazukari: $(COMMON_FILES) libsazukari/src/*.c
+libsazukari:
 	cd libsazukari && make
 
 clean:
@@ -21,4 +21,4 @@ docs/maskom-callgraph.gv: mkd/obj/*.o libsazukari/obj/*.o
 	cd libsazukari && make callgraph
 	egypt mkd/obj/*.expand libsazukari/obj/*.expand > docs/maskom-callgraph.gv
 
-.PHONY: all clean
+.PHONY: all clean mkd libsazukari

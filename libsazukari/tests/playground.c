@@ -79,6 +79,10 @@ int main(int argc, char** argv)
   PEM_read_RSA_PUBKEY(f, &srv, NULL, "");
   BN_bn2bin(srv->n, srvkey.modulus);
   BN_bn2bin(srv->e, srvkey.exponent + MEGAKI_RSA_EXPBYTES - BN_num_bytes(srv->e));   
+  FILE *fx = fopen("server.cert", "w");
+  fwrite(&srvkey, 1, sizeof(srvkey), fx);
+  fclose(fx);
+  
   szkr_new_ctx(ctx, ios, srvkey);
 
   length_t len = 1024;

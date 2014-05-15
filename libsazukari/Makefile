@@ -6,7 +6,8 @@ TESTLIBS=-lcrypto -lsazukari
 
 OBJECTNAMES = \
               sazukari.o \
-              common.o
+              common.o \
+              sslc.o
 
 TESTOBJNAMES = \
 						  playground.o
