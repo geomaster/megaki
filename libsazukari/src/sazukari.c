@@ -688,15 +688,7 @@ int assemble_ack(szkr_ctx_t* ctx, mgk_ack_t* oack)
   memcpy(plain->token.data, ctx->token.data, MEGAKI_TOKEN_BYTES);
   memcpy(oack->iv.data, iv.data, MEGAKI_AES_BLOCK_BYTES);
 
-  /* so there is no documentation on these functions whatsoever
-   * and I'm left to fuck with them on my own. not even a comment
-   * in aes.h.
-   *
-   * and yet, this crapfuck function mangles my IV. it fucking mangles
-   * my fucking IV i give to it as a read-only array, jesus fucking
-   * christ shit. took me half an hour to figure this one. fuck you,
-   * openssl devs, and eat my giant cock
-   */
+  /* This function mangles the IV passed to it, contrary to common sense. */
   AES_cbc_encrypt((unsigned char*) plainb, (unsigned char*) oack->ciphertext,
       sizeof(plainb), &ctx->kenc, (unsigned char*) iv.data, AES_ENCRYPT);
   memcpy(iv.data, oack->iv.data, MEGAKI_AES_BLOCK_BYTES);

@@ -92,7 +92,7 @@ int mgk_encode_message(byte* msg, length_t msglen,
   }
 
   unsigned int ldummy;
-  /* Retarded dipshit libcrypto fucking mangles your fucking IV's */
+  /* Because IVs are mangled by AES_cbc_encrypt */
   byte tmpiv[MEGAKI_AES_BLOCK_BYTES];
   memcpy(tmpiv, hdr.iv.data, MEGAKI_AES_BLOCK_BYTES);
   memcpy(hdr.token.data, token.data, MEGAKI_TOKEN_BYTES);
