@@ -11,6 +11,9 @@ experience and not being reviewed by any credible third-party.
 It uses RSA-OAEP for initial symmetric key exchange and identity verification,
 switching to AES-CBC with HMAC-SHA256 for actual data afterwards.
 
+libuv (the C library on top of which node.js runs) is used for event-based
+network I/O, and OpenSSL's libcrypto is used for crypto primitives.
+
 **Please don't use this in production! Neither the protocol or the implementation
 have been audited, and they have been developed as a learning exercise.**
 
